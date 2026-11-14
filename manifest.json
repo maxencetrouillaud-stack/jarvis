@@ -17,12 +17,12 @@
    "size": 25451
   },
   "install.ps1": {
-   "sha256": "e5b52908669a967a27e8b2cf154d9d82ca0f0f37d5a2483f8a9f5f4e0714ad07",
-   "size": 1052
+   "sha256": "80660f9981b5a4ddf65ef8209d7b8cd5e16ffcb618661ef5825c217129e0dff8",
+   "size": 1107
   },
   "install.py": {
-   "sha256": "ae21b284e379b3e3a458768389e5c7f15bab0ce37bc2c338f49f6d7ae5c43fef",
-   "size": 10540
+   "sha256": "beaa3b6f3d04ea45b607fa80a26d1e07d00ff3fa8535c10678d62cb3014d858d",
+   "size": 10671
   },
   "jarvis.ico": {
    "sha256": "520a844694b058abf55d2461210a97ed2c07ac921114b5b3c078778a56fc0088",
@@ -101,8 +101,8 @@
    "size": 25243
   },
   "jarvis_core/updater.py": {
-   "sha256": "d223b5bdcfb244321ab6c4084843c12afc90d9afa071949477fe034acdaacf28",
-   "size": 10678
+   "sha256": "9edb0aa55ec9b1e948da0689c8b032b6704d38c5e6ffba02e44ce51b10051e8a",
+   "size": 10838
   },
   "jarvis_core/vectors.py": {
    "sha256": "62fc989fce32fd5f5b983f73f1055bb984ca85ecf822cb495c8f61c2ddbd73d7",
@@ -221,5 +221,5 @@
    "size": 389
   }
  },
- "ref": "f6eefc2b18fdeb09a48c267578a30c6f0eaac2bd"
+ "ref": "178fe2ccf3f9fe51443a303a2aaef8891afa4d7e"
 }
