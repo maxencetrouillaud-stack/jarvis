@@ -17,6 +17,7 @@ import shutil
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -107,7 +108,7 @@ class Updater:
 
     # ---------- réseau ----------
     def _get(self, path, ref="main", timeout=20):
-        url = self.raw.format(repo=self.repo(), ref=ref, path=path)
+        url = self.raw.format(repo=self.repo(), ref=ref, path=urllib.parse.quote(path))
         req = urllib.request.Request(url, headers={"User-Agent": f"Jarvis/{__version__}", "Cache-Control": "no-cache"})
         try:
             with self.opener.open(req, timeout=timeout) as r:

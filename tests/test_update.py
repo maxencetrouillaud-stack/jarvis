@@ -70,9 +70,9 @@ def tree(root, files):
     return root
 
 
-V1 = {"run.py": "print('v1')\n", "jarvis_core/a.py": "A = 1\n", "jarvis_core/old.py": "OLD = 1\n",
+V1 = {"run.py": "print('v1')\n", "Lancer Jarvis.bat": "@echo v1\r\n", "jarvis_core/a.py": "A = 1\n", "jarvis_core/old.py": "OLD = 1\n",
       "web/app.js": "console.log(1)\n", "README.md": "v1\n"}
-V2 = {"run.py": "print('v2')\n", "jarvis_core/a.py": "A = 1\n", "jarvis_core/new.py": "NEW = 2\n",
+V2 = {"run.py": "print('v2')\n", "Lancer Jarvis.bat": "@echo v2\r\n", "jarvis_core/a.py": "A = 1\n", "jarvis_core/new.py": "NEW = 2\n",
       "web/app.js": "console.log(2)\n", "README.md": "v1\n"}
 
 
@@ -114,12 +114,13 @@ class UpdaterTests(unittest.TestCase):
     def test_only_changed_files_are_downloaded_then_rollback(self):
         self.pub.publish(tree(self.tmp / "v2", V2), "99.0.0", "Nouvelle sphère")
         info = self.up.check()
-        self.assertEqual((info["available"], info["notes"], info["changes"]), ("99.0.0", "Nouvelle sphère", 3))
+        self.assertEqual((info["available"], info["notes"], info["changes"]), ("99.0.0", "Nouvelle sphère", 4))
         self.pub.hits.clear()
         res = self.up.install()
-        self.assertEqual(res, {"installed": "99.0.0", "files": 3})
+        self.assertEqual(res, {"installed": "99.0.0", "files": 4})
         got = sorted(h.split("/v99.0.0/")[1] for h in self.pub.hits)
-        self.assertEqual(got, ["jarvis_core/new.py", "run.py", "web/app.js"])   # README et a.py inchangés : non téléchargés
+        self.assertEqual(got, ["Lancer%20Jarvis.bat", "jarvis_core/new.py", "run.py", "web/app.js"])   # espace encodé
+        self.assertEqual((self.app / "Lancer Jarvis.bat").read_bytes(), b"@echo v2\r\n")   # README et a.py inchangés : non téléchargés
         self.assertEqual((self.app / "run.py").read_text(), "print('v2')\n")
         self.assertTrue((self.app / "jarvis_core" / "new.py").exists())
         self.assertFalse((self.app / "jarvis_core" / "old.py").exists())        # retiré de la nouvelle version

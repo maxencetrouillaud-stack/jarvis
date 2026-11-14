@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -28,7 +29,14 @@ RAW = "https://raw.githubusercontent.com/{repo}/{ref}/{path}"
 HERE = Path(__file__).resolve().parent
 
 
+def store_python():
+    """Python du Microsoft Store : ses écritures dans AppData sont redirigées dans un dossier caché."""
+    return sys.platform == "win32" and "WindowsApps" in sys.executable
+
+
 def install_root():
+    if store_python():  # hors d'AppData, pour que les raccourcis et l'Explorateur voient bien l'application
+        return Path.home() / "Jarvis"
     if sys.platform == "win32":
         return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Programs" / "Jarvis"
     return Path.home() / ".local" / "share" / "jarvis-app"
@@ -65,7 +73,7 @@ def local_files():
 def remote_files(repo, raw):
     m = json.loads(get(raw.format(repo=repo, ref="main", path="manifest.json")).decode("utf-8"))
     ref = m.get("ref") or f"v{m['version']}"
-    return m, lambda p: get(raw.format(repo=repo, ref=ref, path=p))
+    return m, lambda p: get(raw.format(repo=repo, ref=ref, path=urllib.parse.quote(p)))
 
 
 def copy_app(m, read, app):
@@ -93,6 +101,11 @@ def copy_app(m, read, app):
 
 
 def pythonw():
+    if store_python():  # le Python du Store se lance par ses alias, pas par son dossier protégé
+        alias = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps"
+        for name in (f"pythonw{sys.version_info.major}.{sys.version_info.minor}.exe", "pythonw3.exe", "pythonw.exe"):
+            if (alias / name).exists():
+                return alias / name
     exe = Path(sys.executable)
     w = exe.with_name("pythonw.exe")
     return w if w.exists() else exe

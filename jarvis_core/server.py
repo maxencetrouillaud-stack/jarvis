@@ -485,7 +485,14 @@ def notify(text, title="Jarvis", gui=False):
 def _relaunch(port, gui):
     """Démarre une nouvelle instance de Jarvis (après une mise à jour) une fois celle-ci arrêtée."""
     script = Path(__file__).resolve().parent.parent / "run.py"
-    args = [sys.executable, str(script), "--port", str(port), "--no-window", "--wait"] + (["--app"] if gui else [])
+    exe = sys.executable
+    if sys.platform == "win32" and "WindowsApps" in exe:   # Python du Microsoft Store : passer par son alias
+        alias = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps"
+        for name in (f"pythonw{sys.version_info.major}.{sys.version_info.minor}.exe", "pythonw.exe"):
+            if (alias / name).exists():
+                exe = str(alias / name)
+                break
+    args = [exe, str(script), "--port", str(port), "--no-window", "--wait"] + (["--app"] if gui else [])
     kw = {"cwd": str(script.parent), "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if sys.platform == "win32":
         kw["creationflags"] = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
