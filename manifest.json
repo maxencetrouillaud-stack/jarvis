@@ -4,10 +4,6 @@
  "notes": "Jarvis devient une application : raccourcis, sans fenêtre noire, mises à jour automatiques",
  "published": "2026-11-14",
  "files": {
-  "Installer Jarvis depuis Internet.bat": {
-   "sha256": "3d7515dd7408c6919f8056d32b5d552ea470479c53e569f7a457043aba59c119",
-   "size": 238
-  },
   "Installer Jarvis.bat": {
    "sha256": "0992e75a1bfab818e41f92da509c68c1fecf17e3f89e19656f883536db6bf27b",
    "size": 341
@@ -25,8 +21,8 @@
    "size": 1052
   },
   "install.py": {
-   "sha256": "0fad1f6437a8338de11d6f9c0089062b131d0531bf48ed7856adaf0c41cdad52",
-   "size": 9773
+   "sha256": "ae21b284e379b3e3a458768389e5c7f15bab0ce37bc2c338f49f6d7ae5c43fef",
+   "size": 10540
   },
   "jarvis.ico": {
    "sha256": "520a844694b058abf55d2461210a97ed2c07ac921114b5b3c078778a56fc0088",
@@ -97,16 +93,16 @@
    "size": 48052
   },
   "jarvis_core/server.py": {
-   "sha256": "e909e9209d3b6667ce354d8b076411620b20ba95b8baa64d70ee79c125974ff5",
-   "size": 26952
+   "sha256": "e50fbbdb5b4ae25ca0ef02bff5c68d9da699be55fcad222e70ae26dd6efaefc2",
+   "size": 27367
   },
   "jarvis_core/sphere.py": {
    "sha256": "cfdb89c0ba922eee12a555a9ddd4c94c801005e7bf4c100a8074b4405139db18",
    "size": 25243
   },
   "jarvis_core/updater.py": {
-   "sha256": "3d4b86fb6118951bf1e72435c15d090ab312819117f37efda7a8c0440dcbd766",
-   "size": 10638
+   "sha256": "d223b5bdcfb244321ab6c4084843c12afc90d9afa071949477fe034acdaacf28",
+   "size": 10678
   },
   "jarvis_core/vectors.py": {
    "sha256": "62fc989fce32fd5f5b983f73f1055bb984ca85ecf822cb495c8f61c2ddbd73d7",
@@ -149,8 +145,8 @@
    "size": 11868
   },
   "tests/test_update.py": {
-   "sha256": "90c92cc7c55ae5b56185bf10891eb0e7b6b1c4dbc1fb407b0baaf4cfd12916ed",
-   "size": 12218
+   "sha256": "2776c4879f7a4247bb915c7bec768c0b91ab1de6d25686282d36d8597dff56f8",
+   "size": 12423
   },
   "tools/publish.py": {
    "sha256": "5939152a70bc140e22434970f40581e4d8378cc20660dff97cd3d80ae80b3460",
@@ -225,5 +221,5 @@
    "size": 389
   }
  },
- "ref": "35cf872895c0cc5aea19aed5b39c9336b6b150c3"
+ "ref": "f6eefc2b18fdeb09a48c267578a30c6f0eaac2bd"
 }
