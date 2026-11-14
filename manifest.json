@@ -1,7 +1,7 @@
 {
  "app": "jarvis",
- "version": "0.5.0",
- "notes": "Jarvis devient une application : raccourcis, sans fenêtre noire, mises à jour automatiques",
+ "version": "0.6.0",
+ "notes": "Cerveau central : chaque demande est analysée, les tâches complexes sont découpées en étapes exécutées dans l'ordre puis vérifiées, et le résultat est contrôlé avant d'être affiché. Mémoire intelligente : nature et projet des souvenirs, historique des versions, corrections soumises à votre validation, recherche même formulée autrement, habitudes observées.",
  "published": "2026-11-14",
  "files": {
   "Installer Jarvis.bat": {
@@ -13,8 +13,8 @@
    "size": 453
   },
   "README.md": {
-   "sha256": "65b9399bcc0bd0bdc831b3214b5be5935584a253dea2145c58bc29ec02745543",
-   "size": 25451
+   "sha256": "59febc0dc90e3ceae8d3d4f1d879ea92fd3017f8b250a84c7472597c86d2a8ad",
+   "size": 29158
   },
   "install.ps1": {
    "sha256": "80660f9981b5a4ddf65ef8209d7b8cd5e16ffcb618661ef5825c217129e0dff8",
@@ -29,7 +29,7 @@
    "size": 27304
   },
   "jarvis_core/__init__.py": {
-   "sha256": "ab8740fb1ce64285399edb480abf93701bc56595d2ae1a8c95eec60456c26a3a",
+   "sha256": "de1b0c3536819e30549b3036b12f374a00d0c4d9d1387735415aef2101c926e1",
    "size": 104
   },
   "jarvis_core/__main__.py": {
@@ -41,16 +41,16 @@
    "size": 3947
   },
   "jarvis_core/brain.py": {
-   "sha256": "7b4835ef2cfd89aa1cce9b6beec428c6d69ddf864545e2b51f170ce08e626cac",
-   "size": 26893
+   "sha256": "3dd8d80f15854f150d73d062733a1739e669f486471ef9fd07e25cf1625fe609",
+   "size": 38087
   },
   "jarvis_core/collect.py": {
    "sha256": "b638ccb43ce727a12cd2e165befef1daba245039001272270064b539d733c29f",
    "size": 34565
   },
   "jarvis_core/config.py": {
-   "sha256": "ad1385d24d437eab362638ae112608fe92e134161cf980a94d3cf5bdd10aa7cf",
-   "size": 5417
+   "sha256": "5c578e2cd05c6d1d838336f9675e36a6cdb063db1bf5194ab83b562915b0a695",
+   "size": 6295
   },
   "jarvis_core/extract.py": {
    "sha256": "dd784ffb528c07b12a4acd34649b238f9380ae7d904ad87f4d1f517bb0eeefdf",
@@ -81,8 +81,12 @@
    "size": 17599
   },
   "jarvis_core/memory.py": {
-   "sha256": "1ff04d270c4b4c876e57b6f4414c31d29c06372def63dd09e2f1cfedd301be70",
-   "size": 18266
+   "sha256": "0d0edbeb0b038c14773f3f60efd12ad1817e66778cb6d353c1955a9ae8f27e34",
+   "size": 36302
+  },
+  "jarvis_core/orchestrator.py": {
+   "sha256": "7e5f1ff767b03af0be71aca3ab82bf522866689692f9292ae7f66ca0921bb05f",
+   "size": 17260
   },
   "jarvis_core/providers.py": {
    "sha256": "c9a212fc63b051782a66c95d2a4b4dc3945d2896067dc34c674d4138f711b1a9",
@@ -93,8 +97,8 @@
    "size": 48052
   },
   "jarvis_core/server.py": {
-   "sha256": "e50fbbdb5b4ae25ca0ef02bff5c68d9da699be55fcad222e70ae26dd6efaefc2",
-   "size": 27367
+   "sha256": "eafe5ddc248792976a8862b2bcde3ed18b6ad07072e3321451175b4060940843",
+   "size": 31023
   },
   "jarvis_core/sphere.py": {
    "sha256": "cfdb89c0ba922eee12a555a9ddd4c94c801005e7bf4c100a8074b4405139db18",
@@ -117,16 +121,20 @@
    "size": 223
   },
   "tests/demo_server.py": {
-   "sha256": "a97e2a081bda3f62785d73f1803ed86db1c9791092ed6a61773a55f49a6730e9",
-   "size": 6226
+   "sha256": "3267867378e543e8f72fd28339fd036704c0acfc670fb57e4fd323b97d2777a3",
+   "size": 7939
   },
   "tests/e2e.mjs": {
-   "sha256": "d7ea44655c933a1227acf27171e39f3030d586ad47b9f5b853570efe3f2d97df",
-   "size": 33671
+   "sha256": "3d3cc4c9b4a7a521be0a995dab08d07c11beadc22de6c0b8048f50b8424ff2a7",
+   "size": 37218
   },
   "tests/fakes.py": {
    "sha256": "c17a1d9b791c13fa6cd879f3f5f413d4466d50adddace7770b3bcb5cec23f5da",
    "size": 13964
+  },
+  "tests/test_brain.py": {
+   "sha256": "07d525d4211d317042c09a2446cfc0b5cd1a8981ec4b87a6ef0374edc347abee",
+   "size": 25644
   },
   "tests/test_core.py": {
    "sha256": "314342942e0e424e0efb683e723952ecb625821a59b0157d45ad4fbc3d1411ef",
@@ -153,16 +161,16 @@
    "size": 1094
   },
   "ui/api.ts": {
-   "sha256": "a60e9ee60486c8cebcd33b741441520ef2ccb6fbdbe9da7ddf9b3d98c8270160",
-   "size": 5411
+   "sha256": "e2ff0daf7f4ffb6de32e3d62775e98054e30075fc2af3b813f22495068c234a6",
+   "size": 6497
   },
   "ui/center.tsx": {
    "sha256": "08500f4558f6611d1349af151319344c0053a1289efee3a499506ba7b0a7bf65",
    "size": 25515
   },
   "ui/chat.tsx": {
-   "sha256": "88354be5f1c0460a7bb6d9a0f4ecac269706ffdb98e6b23f8391f4e3ff80582b",
-   "size": 24449
+   "sha256": "7966c0e478db3f322c113c467d37989524d6e07ddcf80d091c9dbda7ff27176d",
+   "size": 30202
   },
   "ui/common.tsx": {
    "sha256": "6985c8849aeaf165d0f4d3d8020207631a5703e5e45dc80965b3f3ee0921e279",
@@ -181,8 +189,8 @@
    "size": 8157
   },
   "ui/panels.tsx": {
-   "sha256": "68c55dc5dc9c85e542f14461bae5295fa5173dd0959025cacd6d8c0f9686316d",
-   "size": 35044
+   "sha256": "9689dad6f134f77d9f62f706c94d182b7934226adb954ccc7287aa577635cd49",
+   "size": 49751
   },
   "ui/research.tsx": {
    "sha256": "4e818e0d08d5e7069a2b4ec6493dd8b4d659d69054aa134f4821bc7f15a8e9da",
@@ -205,12 +213,12 @@
    "size": 12520
   },
   "web/app.css": {
-   "sha256": "4f816b82d2a9ed0d71a4d70a4e79fdf43ead8460318546f40f5efcaf8e5a5ba8",
-   "size": 37212
+   "sha256": "6fe4dcc24be17713d6f28d08ddf2a58ea6f77ebee9171f94db6714bde38729bc",
+   "size": 39639
   },
   "web/app.js": {
-   "sha256": "b5f5347341188c9169d06170f9c383544da4c2a5c2fefcdcf51a7ec8e3593faa",
-   "size": 425485
+   "sha256": "44091883659e0713a4571f28aeb16077a70220ebce76691f0e0151b8e4084551",
+   "size": 444163
   },
   "web/icon.svg": {
    "sha256": "565f170402e6bd608cfa9fb9712e7df88d8cb2163ede94e957d25a5c176e0c7d",
@@ -221,5 +229,5 @@
    "size": 389
   }
  },
- "ref": "178fe2ccf3f9fe51443a303a2aaef8891afa4d7e"
+ "ref": "0a854ad61acbbe93f817ac78e343e8647ec52b82"
 }
