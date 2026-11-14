@@ -1,0 +1,21 @@
+{
+  "name": "jarvis-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Interface de Jarvis (React + TypeScript). Le fichier web/app.js fourni est déjà compilé.",
+  "scripts": {
+    "build": "esbuild ui/main.tsx --bundle --minify --target=es2020 --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=web/app.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "marked": "^18.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.0"
+  }
+}
