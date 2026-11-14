@@ -4,6 +4,10 @@
  "notes": "Jarvis devient une application : raccourcis, sans fenêtre noire, mises à jour automatiques",
  "published": "2026-11-14",
  "files": {
+  "Installer Jarvis depuis Internet.bat": {
+   "sha256": "3d7515dd7408c6919f8056d32b5d552ea470479c53e569f7a457043aba59c119",
+   "size": 238
+  },
   "Installer Jarvis.bat": {
    "sha256": "0992e75a1bfab818e41f92da509c68c1fecf17e3f89e19656f883536db6bf27b",
    "size": 341
@@ -221,5 +225,5 @@
    "size": 389
   }
  },
- "ref": "4dc034d48192a8783c7f5ea7b0409c6752b64919"
+ "ref": "35cf872895c0cc5aea19aed5b39c9336b6b150c3"
 }
