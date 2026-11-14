@@ -9,22 +9,32 @@ export interface Settings {
   auto_route: boolean; routes: Record<string, string>; utility_model: string; embedding_model: string;
   memory_auto_extract: boolean; memory_top_k: number; search_past_conversations: boolean;
   deep_mode_default: boolean; temperature: number; max_tokens: number; backup_keep: number;
+  orchestrator_decompose: string; orchestrator_verify: string; orchestrator_max_steps: number; orchestrator_max_calls: number;
+  orchestrator_max_seconds: number; memory_update_mode: string; memory_query_expansion: boolean; habits_in_context: boolean;
   providers: Record<string, { enabled: boolean; base_url: string }>;
 }
 export interface Stats {
   conversations: number; messages: number; memories: number; memories_semantic: number;
   by_category: Record<string, number>; models_used: Record<string, number>; db_bytes: number;
+  by_nature: Record<string, number>; projects: number; proposals: number; versions: number;
 }
 export interface AppState {
   version: string; settings: Settings; providers: Provider[]; routes: Record<string, string>;
-  categories: string[]; kinds: string[]; stats: Stats; kb: Record<string, any>; modules: { key: string; label: string; color: string }[]; key_storage: string; data_dir: string;
+  categories: string[]; kinds: string[]; natures: string[]; strategies: Record<string, string>; stats: Stats; kb: Record<string, any>; modules: { key: string; label: string; color: string }[]; key_storage: string; data_dir: string;
   default_personality: string; embedding_active: string; first_run: boolean;
 }
 export interface Memory {
   id: number; content: string; category: string; importance: number; kind: string; source: string;
   created: number; updated: number; expires_at: number | null; use_count: number; title?: string;
-  similarity?: number; vec_model?: string | null;
+  similarity?: number; vec_model?: string | null; nature?: string; project?: string | null; found_by?: string;
 }
+export interface Analysis {
+  objective: string; route: string; complexity: string; reasons: string[]; strategy: string; strategy_label: string;
+  verify: boolean; verify_reason: string; resources: string[]; notes?: string[];
+  tools: { tool: string; label: string; name?: string; query?: string; needs_confirmation: boolean }[];
+  repeated: { index: number; text: string } | null;
+}
+export interface Step { n: number; title: string; state: string; note?: string; summary?: string; depends?: number[] }
 export interface Meta {
   route?: string; route_label?: string; reason?: string; deep?: boolean; plan?: string;
   memories?: any[]; recalls?: { conv_id: string; title: string }[]; kb_miss?: boolean;
@@ -32,6 +42,7 @@ export interface Meta {
   verify?: { checked: boolean; ok: boolean; problemes: string[]; note?: string; corrected?: boolean };
   modules?: { key: string; label: string; used: boolean; hits: number; note: string }[];
   domain?: string; research_offer?: string; research_id?: number;
+  analysis?: Analysis; steps?: Step[]; controls?: { level: string; text: string }[]; strategy?: string; launched?: string;
   conflicts?: { label: string; a: { n: number; text: string; title: string }; b: { n: number; text: string; title: string } }[];
 }
 export interface Message {

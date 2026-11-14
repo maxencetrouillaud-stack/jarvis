@@ -416,6 +416,54 @@ try {
   await small.locator(".mods li.off", { hasText: "Bibliothèque technique" }).waitFor();
   step("réponse : modules consultés affichés ; un simple « merci » ne déclenche aucune recherche documentaire");
 
+  // --- cerveau central : tâche complexe découpée en étapes, exécutée, vérifiée, tracée
+  await box.fill("Prépare-moi un plan de révision complet pour mon partiel de RDM :\n- liste les chapitres\n- propose ensuite un planning sur deux semaines\n- puis donne trois exercices types");
+  await box.press("Enter");
+  const big = page.locator(".msg.assistant").last();
+  await big.locator(".md").getByText("plan de révision").waitFor();
+  await big.locator(".tag", { hasText: "En étapes · 3/3" }).waitFor();
+  await big.locator(".tag", { hasText: "Vérifié" }).waitFor();
+  await big.getByRole("button", { name: "Détail" }).click();
+  await big.getByText("Organiser les révisions du partiel de RDM").waitFor();
+  await big.locator(".steps li", { hasText: "Planning sur deux semaines" }).getByText("terminée").waitFor();
+  await big.locator(".steps li", { hasText: "Exercices types" }).getByText("Flambage d'Euler").waitFor();
+  await shot("21-taches-en-etapes");
+  await box.fill("Ouvre la calculatrice");
+  await box.press("Enter");
+  const tool = page.locator(".msg.assistant").last();
+  await tool.getByRole("button", { name: "Lancer Calculatrice" }).click();
+  await tool.getByText("Calculatrice a été lancé à votre demande.").waitFor();
+  step("cerveau central : tâche complexe en 3 étapes exécutées et vérifiées ; outil proposé, lancé seulement sur accord");
+
+  // --- mémoire intelligente : correction proposée, validée, historique gardé
+  await box.fill("Au fait, je suis passé en deuxième année");
+  await box.press("Enter");
+  await page.getByText(/mise à jour de souvenir à valider/).waitFor();
+  await page.locator(".rail-btn", { hasText: "Mémoire" }).click();
+  await page.getByRole("button", { name: "Liste", exact: true }).click();
+  const mprop = page.locator(".proposal");
+  await mprop.locator(".old", { hasText: "étudiant en BUT GMP à Limoges" }).waitFor();
+  await mprop.locator(".new", { hasText: "deuxième année" }).waitFor();
+  await shot("22-memoire-a-valider");
+  await mprop.getByRole("button", { name: "Accepter" }).click();
+  await mprop.waitFor({ state: "detached" });
+  const card = page.locator(".mem", { hasText: "deuxième année de BUT GMP" });
+  await card.getByRole("button", { name: "Historique" }).click();
+  await card.locator(".history li", { hasText: "Mise à jour validée" }).getByText("L'utilisateur est étudiant en BUT GMP à Limoges").waitFor();
+  await card.locator(".nat", { hasText: "Personnelle" }).waitFor();
+  await page.locator(".filters select[aria-label='Nature']").selectOption("technique");
+  await page.getByText("Aucun souvenir ne correspond.").waitFor();
+  await page.locator(".filters select[aria-label='Nature']").selectOption("");
+  await page.getByRole("button", { name: "Sphère 3D" }).click();
+  await page.locator(".sphere-gl").waitFor();
+  await page.getByRole("button", { name: "Tableau de bord" }).click();
+  await page.getByText("Cerveau central").first().waitFor();
+  await page.locator(".bar", { hasText: "Décomposée en étapes" }).waitFor();
+  await page.getByText("Habitudes observées").waitFor();
+  await shot("23-tableau-cerveau");
+  step("mémoire : mise à jour proposée puis acceptée, ancienne version dans l'historique ; tableau de bord du cerveau");
+  await page.locator(".rail-btn", { hasText: "Conversation" }).click();
+
   // --- mode vocal (reconnaissance et synthèse simulées)
   await page.locator(".rail-btn", { hasText: "Conversation" }).click();
   await page.getByRole("button", { name: "Nouvelle conversation" }).click();
@@ -448,10 +496,11 @@ try {
   await page.evaluate(() => window.__say("lance la calculatrice"));
   await page.locator(".toast", { hasText: "Calculatrice lancé" }).waitFor();
   assert.match((await call("GET", "/api/actions"))[0].detail, /Calculatrice lancé/);
+  const launches = (await call("GET", "/api/actions")).filter((a) => a.kind === "application").length;
   await page.locator(".voicebar.v-listening").waitFor();
   await page.evaluate(() => window.__say("lance photoshop"));   // pas dans la liste autorisée : rien n'est lancé
   await page.locator(".msg.user", { hasText: "lance photoshop" }).waitFor();
-  assert.equal((await call("GET", "/api/actions")).length, 1);
+  assert.equal((await call("GET", "/api/actions")).filter((a) => a.kind === "application").length, launches, "une application hors liste a été lancée");
   await page.locator(".voicebar.v-listening").waitFor();
   await page.evaluate(() => window.__say("ouvre la mémoire"));
   await page.locator(".sphere-gl").waitFor();

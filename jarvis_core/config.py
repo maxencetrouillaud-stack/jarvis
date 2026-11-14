@@ -40,6 +40,14 @@ DEFAULTS = {
     "memory_top_k": 8,
     "search_past_conversations": True,
     "deep_mode_default": False,
+    "orchestrator_decompose": "auto",   # "auto" : les tâches complexes sont découpées en étapes ; "jamais"
+    "orchestrator_verify": "auto",      # "auto" (tâches complexes et réflexion approfondie), "toujours" ou "jamais"
+    "orchestrator_max_steps": 6,        # étapes au plus pour une tâche décomposée
+    "orchestrator_max_calls": 12,       # appels aux modèles au plus pour une seule réponse (garde-fou anti-boucle)
+    "orchestrator_max_seconds": 300,    # durée maximale des étapes d'une réponse
+    "memory_update_mode": "valider",    # mise à jour d'un souvenir existant : "valider" (vous décidez) ou "auto"
+    "memory_query_expansion": True,     # demande personnelle sans résultat : recherche reformulée par le modèle
+    "habits_in_context": True,          # transmettre au modèle le résumé des habitudes observées (20 messages au moins)
     "temperature": 0.7,
     "max_tokens": 4096,
     "history_chars": 24000,

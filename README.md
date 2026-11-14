@@ -72,6 +72,42 @@ Vos données sont dans `%APPDATA%\Jarvis` (base `jarvis.db`, réglages, clés, s
   de ne pas en suivre les instructions. C'est une atténuation, pas une garantie.
 - Sauvegarde automatique quotidienne (.zip), sauvegarde manuelle, restauration.
 
+## Cerveau central et mémoire intelligente (version 0.6)
+
+**Cerveau central** (`jarvis_core/orchestrator.py`) — chaque message passe par lui :
+- **Analyse** : objectif, type de tâche, complexité (simple, moyenne, complexe, avec les raisons), ressources à consulter,
+  outils envisagés, question déjà posée dans la conversation. Faite par des règles : aucun appel au modèle, rapide et explicable.
+- **Stratégie** : réponse directe, réponse avec contexte, réflexion approfondie (plan, réponse, vérification, correction)
+  ou **tâche décomposée** : le modèle utilitaire découpe la demande en 2 à 6 étapes ; chaque étape est exécutée dans l'ordre
+  et reçoit le résultat des étapes dont elle dépend ; une synthèse finale est rédigée puis vérifiée par un second appel.
+- **Contrôles avant présentation** (sans appel au modèle) : source citée qui n'existe pas, action annoncée (« j'ai envoyé… »)
+  alors qu'aucune action n'a été faite, réponse identique à la précédente.
+- **Garde-fous** : nombre d'étapes, d'appels aux modèles et durée plafonnés ; une étape qui répète une étape précédente est
+  écartée ; après deux étapes en échec, retour à une réponse en un seul passage.
+- **Outils** : quand une demande vise une application de votre liste autorisée, un bouton propose de la lancer — rien ne
+  part sans votre clic. La recherche sur des sources externes reste proposée, jamais lancée seule.
+- **Trace** : chaque réponse garde son analyse, ses étapes, ses contrôles ; chaque exécution est historisée (stratégie,
+  appels, durée, résultat). Visible sous la réponse (« Détail ») et dans le tableau de bord, avec des chiffres réels.
+
+**Mémoire intelligente**
+- Nature de chaque souvenir : personnelle, projet, technique ou temporaire ; rattachement à un projet nommé. Les anciens
+  souvenirs reçoivent leur nature à la migration.
+- **Historique** : toute modification garde l'ancienne version ; chaque version est restaurable ; un souvenir supprimé ou
+  expiré reste récupérable (en bas de la vue Mémoire).
+- **Mises à jour contrôlées** : quand une conversation corrige un souvenir existant (déménagement, changement d'avis…),
+  la correction vous est **proposée** et le souvenir ne change qu'après « Accepter » (réglage : mise à jour automatique,
+  ancienne version gardée).
+- **Formulations différentes** : la recherche compare des racines de mots et des groupes de synonymes (« boulot » retrouve
+  « travail »). Si une question personnelle ne trouve rien, le modèle utilitaire propose d'autres mots et la recherche est
+  relancée (un appel de plus, seulement dans ce cas). Les préférences importantes accompagnent chaque demande.
+- **Habitudes observées** : statistiques calculées sur vos messages (moments de la journée, types de demandes, longueur,
+  usage de la réflexion approfondie). Ce ne sont pas des souvenirs et rien n'est deviné ; à partir de 20 messages, un
+  résumé chiffré est transmis au modèle (désactivable).
+
+Limites honnêtes : la complexité est estimée par des règles (longueur, listes, enchaînements, mots comme « plan complet ») ;
+une demande difficile mais courte ne sera pas découpée automatiquement (activez alors la réflexion approfondie). La qualité
+du découpage et des étapes dépend du modèle utilisé ; tout a été testé avec des modèles simulés.
+
 ## Base de connaissances (version 0.2)
 
 Fichier `knowledge.db`, **séparé** de la mémoire personnelle (`jarvis.db`). Pendant une conversation, Jarvis
@@ -259,7 +295,7 @@ pour tous les nœuds, un pour tous les liens.
 
 ## Comment c'est testé — et ce qui ne l'est pas
 
-- `python -m unittest discover -s tests` : 106 tests du moteur (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
+- `python -m unittest discover -s tests` : 128 tests du moteur (dont 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
   extraction de documents, base de connaissances, collecte, réponses sourcées, migration, sphère, lancement d'applications,
   et les 4 modules de la 0.4 : relevé de formules, versions, dossier surveillé, index approché, chercheur, validation, export).
 - `node tests/e2e.mjs` : parcours complet de l'interface dans un vrai navigateur (demande `npm install` et Playwright).
@@ -283,15 +319,16 @@ pour tous les nœuds, un pour tous les liens.
 ## Ce qui n'existe pas encore
 
 Rien de ceci n'est présent dans l'interface, pas même sous forme de bouton :
-équipe d'agents (étape 3), contrôle du PC et outils — recherche web, fichiers, exécution de code (étape 4),
+vérification des faits et des calculs, niveaux de certitude, série de tests de qualité (phase 2), gestionnaire de missions
+et équipe d'agents (phase 3), choix automatique du modèle selon le coût et suivi des dépenses (phase 4), contrôle du PC et outils — recherche web, fichiers, exécution de code (étape 4),
 navigation libre sur Internet (le chercheur n'interroge que les sources listées plus haut), base PostgreSQL / pgvector
-(la base reste SQLite, sans installation), projets, plugins, installateur `.exe`, démarrage automatique, mises à jour automatiques, mot de passe à l'ouverture.
+(la base reste SQLite, sans installation), plugins, installateur `.exe`, démarrage automatique, mises à jour automatiques, mot de passe à l'ouverture.
 L'analyse d'images n'est pas gérée.
 
 ## Organisation
 
 ```
-jarvis_core/   moteur Python (providers, brain, memory, knowledge, library, vectors, hub, research, extract, collect,
+jarvis_core/   moteur Python (providers, brain, orchestrator, memory, knowledge, library, vectors, hub, research, extract, collect,
                kb_api, sphere, keystore, backup, updater, server)
 install.py     installation comme application (raccourcis, désinstallation) ; install.ps1 : installation en une commande
 tools/        publish.py : prépare manifest.json pour publier une version

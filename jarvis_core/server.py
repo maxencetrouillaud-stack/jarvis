@@ -22,6 +22,7 @@ from .brain import ROUTES, Brain
 from .collect import KnowledgeService
 from .config import DEFAULT_PERSONALITY, Settings, data_dir
 from .hub import MODULES, Hub
+from .orchestrator import STRATEGIES
 from .knowledge import Duplicate, Knowledge
 from .keystore import SCHEME, SecretStore
 from .providers import REGISTRY, ProviderError
@@ -94,6 +95,8 @@ class App:
             "routes": ROUTES,
             "categories": mem.CATEGORIES,
             "kinds": mem.KINDS,
+            "natures": mem.NATURES,
+            "strategies": STRATEGIES,
             "stats": self.store.stats(),
             "kb": self.kb.stats(self.settings.get("kb_stale_days", 180)),
             "activity": self.brain.activity,
@@ -249,6 +252,18 @@ def make_handler(app: App):
                     body["library_folder"] = str(body["library_folder"] or "").strip().strip('"')[:500]
                 if "research_on_gap" in body and body["research_on_gap"] not in ("proposer", "jamais"):
                     body["research_on_gap"] = "proposer"
+                for key, allowed in (("orchestrator_decompose", ("auto", "jamais")),
+                                     ("orchestrator_verify", ("auto", "toujours", "jamais")),
+                                     ("memory_update_mode", ("valider", "auto"))):
+                    if key in body and body[key] not in allowed:
+                        body[key] = allowed[0]
+                for key, lo, hi in (("orchestrator_max_steps", 2, 8), ("orchestrator_max_calls", 4, 40),
+                                    ("orchestrator_max_seconds", 30, 1800)):
+                    if key in body:
+                        try:
+                            body[key] = max(lo, min(hi, int(body[key])))
+                        except (TypeError, ValueError):
+                            body.pop(key)
                 if "voice_wake_word" in body:
                     body["voice_wake_word"] = " ".join(str(body["voice_wake_word"]).lower().split())[:30] or "jarvis"
                 app.settings.update(body)
@@ -339,22 +354,62 @@ def make_handler(app: App):
             if path == "/api/search" and method == "GET":
                 return self._json(s.search_messages((q.get("q") or [""])[0], None, 30))
 
+            if path == "/api/brain" and method == "GET":
+                return self._json({"stats": s.run_stats(), "runs": s.runs(int((q.get("limit") or ["25"])[0])),
+                                   "habits": s.observed_habits(), "strategies": STRATEGIES})
+            if path == "/api/memories/deleted" and method == "GET":
+                return self._json(s.deleted_memories())
+            if path == "/api/memories/projects" and method == "GET":
+                return self._json(s.projects())
+            if path == "/api/memories/proposals" and method == "GET":
+                return self._json(s.proposals((q.get("status") or ["en attente"])[0]))
+            m_prop = re.match(r"^/api/memories/proposals/(\d+)$", path)
+            if m_prop and method == "POST":
+                action = str(self._body().get("action") or "")
+                if action not in ("accepter", "refuser"):
+                    raise HttpError(400, "Action attendue : accepter ou refuser")
+                p = s.get_proposal(int(m_prop.group(1)))
+                res = s.decide_proposal(int(m_prop.group(1)), action == "accepter",
+                                        b.embed(p["content"]) if p and action == "accepter" else None)
+                if res:
+                    app.hub.forget(f"m:{res['id']}")
+                    app.hub.integrate(f"m:{res['id']}")
+                s.log_action("mémoire", f"proposition {m_prop.group(1)} {'acceptée' if action == 'accepter' else 'refusée'}")
+                return self._json({"ok": True, "memory": res})
+            m_ver = re.match(r"^/api/memories/(\d+)/(versions|restore)$", path)
+            if m_ver:
+                mid = int(m_ver.group(1))
+                if m_ver.group(2) == "versions" and method == "GET":
+                    return self._json({"memory": s.get_memory(mid), "versions": s.versions(mid)})
+                if m_ver.group(2) == "restore" and method == "POST":
+                    vid = int(self._body().get("version_id") or 0)
+                    v = next((x for x in s.versions(mid) if x["id"] == vid), None)
+                    res = s.restore_version(mid, vid, b.embed(v["content"]) if v else None)
+                    app.hub.forget(f"m:{mid}")
+                    app.hub.integrate(f"m:{mid}")
+                    s.log_action("mémoire", f"souvenir {mid} restauré (version {vid})")
+                    return self._json(res)
+
             if path == "/api/memories" and method == "GET":
                 query = (q.get("q") or [""])[0].strip()
                 cat = (q.get("category") or [""])[0] or None
+                nature = (q.get("nature") or [""])[0] or None
+                project = (q.get("project") or [""])[0] or None
                 if query:
                     res = s.search_memories(query, 50, b.embed(query))
-                    if cat:
-                        res = [r for r in res if r["category"] == cat]
+                    for key, val in (("category", cat), ("nature", nature), ("project", project)):
+                        if val:
+                            res = [r for r in res if r.get(key) == val]
                     return self._json(res)
-                return self._json(s.list_memories(cat))
+                return self._json(s.list_memories(cat, nature=nature, project=project))
             if path == "/api/memories" and method == "POST":
                 body = self._body()
                 content = str(body.get("content") or "").strip()
                 if not content:
                     raise HttpError(400, "Le souvenir est vide")
                 res = s.add_memory(content, body.get("category", "divers"), body.get("importance", 3),
-                                   body.get("kind", "durable"), "manuel", body.get("days"), ext=b.embed(content))
+                                   body.get("kind", "durable"), "manuel", body.get("days"), ext=b.embed(content),
+                                   nature=body.get("nature"), project=body.get("project"))
                 app.hub.integrate(f"m:{res['id']}")
                 return self._json(s.get_memory(res["id"]))
             if m and m.group(1) == "memories":

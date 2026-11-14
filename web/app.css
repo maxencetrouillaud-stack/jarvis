@@ -432,3 +432,35 @@ details.src .passage { margin-top: 8px; }
   border: 1px solid rgba(92, 208, 255, .35); border-radius: 10px; background: rgba(46, 139, 255, .12); font-size: 14px; }
 .update-banner span { flex: 1 1 260px; }
 .update-banner svg { color: var(--cyan); flex: none; }
+
+/* ---- 0.6 : cerveau central et mémoire intelligente ---- */
+.trace ol.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.trace ol.steps li { color: #b9c8de; }
+.trace ol.steps li b { font-weight: 500; color: var(--text); }
+.trace ol.steps li i { color: var(--muted); font-style: normal; font-size: 12px; }
+.trace ol.steps li p { margin: 3px 0 0 22px; font-size: 12.5px; color: var(--muted); white-space: pre-wrap; }
+.st-ico { display: inline-block; width: 18px; color: var(--accent, #2e8bff); }
+.st-échec .st-ico, .st-non-exécutée .st-ico { color: var(--warn); }
+.st-terminée .st-ico { color: var(--ok); }
+.proposals .proposal { display: flex; gap: 14px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding: 10px 0; flex-wrap: wrap; }
+.proposal p { margin: 3px 0; }
+.proposal p span { display: inline-block; min-width: 64px; font: 11px var(--mono); color: var(--muted); margin-right: 8px; }
+.proposal p.old { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(255,255,255,.25); }
+.proposal p.new { color: var(--text); }
+.mem-meta .nat { font: 11px var(--mono); padding: 1px 7px; border-radius: 5px; border: 1px solid var(--line2); }
+.nat.n-personnelle { color: #fb7185; border-color: rgba(251,113,133,.4); }
+.nat.n-projet { color: #f8fafc; border-color: rgba(248,250,252,.4); }
+.nat.n-technique { color: #22d3ee; border-color: rgba(34,211,238,.4); }
+.nat.n-temporaire { color: var(--warn); border-color: rgba(255,181,71,.4); }
+.mem-meta .link { font-size: 12px; }
+ul.history { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; border-left: 2px solid var(--line2); padding-left: 12px; }
+ul.history p { margin: 2px 0; font-size: 13.5px; }
+.deleted { margin: 18px 0 8px; }
+ul.runs { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; font-size: 13px; }
+ul.runs .link { text-align: left; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
+.run-detail { margin: 4px 0 8px 15px; font-size: 13px; color: #b9c8de; }
+.run-detail p { margin: 3px 0; } .run-detail ol { margin: 4px 0; padding-left: 18px; }
+h4.sub { margin: 14px 0 4px; font-size: 13px; color: var(--muted); font-weight: 500; }
+.habits-sum { font-size: 14px; line-height: 1.5; }

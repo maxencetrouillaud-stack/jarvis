@@ -119,10 +119,25 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
     let finished = false; // la réponse est terminée ; le flux peut rester ouvert pour la mise en mémoire
     try {
       await chatStream({ conversation_id: cid!, message: text, model: model || "auto", deep }, (ev) => {
-        if (ev.type === "meta") {
+        if (ev.type === "analysis") {
+          const { type, ...an } = ev;
+          patchLast((m) => ({ ...m, status: an.strategy === "décomposée" ? "Tâche complexe : découpage en étapes…" : m.status,
+            meta: { ...m.meta, analysis: an, strategy: an.strategy } }));
+        } else if (ev.type === "steps_plan") {
+          patchLast((m) => ({ ...m, meta: { ...m.meta, analysis: m.meta.analysis && { ...m.meta.analysis, objective: ev.objective },
+            steps: ev.steps.map((x: any) => ({ ...x, state: "en attente" })) } }));
+        } else if (ev.type === "step") {
+          patchLast((m) => ({ ...m, status: ev.state === "en cours" ? `Étape ${ev.n} : ${ev.title}…` : m.status,
+            meta: { ...m.meta, steps: (m.meta.steps || []).map((x) => (x.n === ev.n ? { ...x, state: ev.state, note: ev.note, summary: ev.summary } : x)) } }));
+        } else if (ev.type === "strategy") {
+          patchLast((m) => ({ ...m, meta: { ...m.meta, strategy: ev.strategy,
+            analysis: m.meta.analysis && { ...m.meta.analysis, strategy: ev.strategy, strategy_label: ev.label, notes: [...(m.meta.analysis.notes || []), ev.note] } } }));
+        } else if (ev.type === "controls") {
+          patchLast((m) => ({ ...m, meta: { ...m.meta, controls: ev.items } }));
+        } else if (ev.type === "meta") {
           patchLast((m) => ({ ...m, model: ev.model, status: "",
             meta: { ...m.meta, route: ev.route, route_label: ev.route_label, reason: ev.reason, memories: ev.memories, recalls: ev.recalls, sources: ev.sources, kb_miss: ev.kb_miss,
-              modules: ev.modules, domain: ev.domain, conflicts: ev.conflicts, research_offer: ev.research_offer } }));
+              modules: ev.modules, domain: ev.domain, conflicts: ev.conflicts, research_offer: ev.research_offer, strategy: ev.strategy } }));
         } else if (ev.type === "status") {
           setPhase("thinking");
           patchLast((m) => ({ ...m, status: ev.text }));
@@ -145,8 +160,10 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
         } else if (ev.type === "memories") {
           if (ev.saved?.length) {
             toast(`${ev.saved.length} souvenir${ev.saved.length > 1 ? "s" : ""} enregistré${ev.saved.length > 1 ? "s" : ""} : ${ev.saved.map((s: any) => s.content).join(" · ")}`, "memory");
-            refreshState();
           }
+          if (ev.updated?.length) toast(`Souvenir mis à jour (l'ancienne version est gardée dans son historique) : ${ev.updated.map((s: any) => s.content).join(" · ")}`, "memory");
+          if (ev.proposed?.length) toast(`${ev.proposed.length} mise${ev.proposed.length > 1 ? "s" : ""} à jour de souvenir à valider dans Mémoire : ${ev.proposed.map((s: any) => s.content).join(" · ")}`, "memory");
+          if (ev.saved?.length || ev.updated?.length || ev.proposed?.length) refreshState();
         } else if (ev.type === "error" && !finished) {
           patchLast((m) => ({ ...m, pending: false, status: "", error: ev.message }));
           if (talk) v!.speak("Une erreur s'est produite. Le détail est affiché à l'écran.");
@@ -278,6 +295,13 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
               )}
             </div>
           ) : messages.map((m, i) => <Bubble key={i} m={m} name={name} goDoc={goDoc} goResearch={goResearch}
+            launch={async (query) => {
+              try {
+                const r = await api("POST", "/api/apps/launch", { query });
+                if (r.launched) { toast(`${r.name} lancé.`); setMessages((ms) => ms.map((x, k) => (k === i ? { ...x, meta: { ...x.meta, launched: r.name } } : x))); }
+                else toast(r.error || "Aucune application autorisée ne correspond.", "error");
+              } catch (e: any) { toast(e.message, "error"); }
+            }}
             research={async (mode) => {
               const question = [...messages.slice(0, i)].reverse().find((x) => x.role === "user")?.content || "";
               try {
@@ -325,7 +349,10 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
   );
 }
 
-function Bubble({ m, name, goDoc, research, goResearch }: { m: Message; name: string; goDoc: (id: number) => void; research: (mode: string) => void; goResearch: () => void }) {
+const STRAT_TAG: Record<string, string> = { directe: "Réponse directe", contextuelle: "Avec contexte", approfondie: "Approfondie", "décomposée": "En étapes" };
+const STEP_ICON: Record<string, string> = { "en attente": "○", "en cours": "◔", "terminée": "●", "échec": "✕", redondante: "≈", "non exécutée": "–" };
+
+function Bubble({ m, name, goDoc, research, goResearch, launch }: { m: Message; name: string; goDoc: (id: number) => void; research: (mode: string) => void; goResearch: () => void; launch: (q: string) => void }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   if (m.role === "user") return <div className="msg user"><div className="bubble">{m.content}</div></div>;
@@ -338,13 +365,20 @@ function Bubble({ m, name, goDoc, research, goResearch }: { m: Message; name: st
   const uncited = srcs.filter((s) => !citedSet.has(s.n));
   const mods = m.meta.modules || [];
   const conflicts = m.meta.conflicts || [];
-  const details = (mems > 0 && typeof m.meta.memories![0] === "object") || recalls > 0 || m.meta.plan || (v && v.problemes?.length) || mods.length > 0;
+  const an = m.meta.analysis;
+  const steps = m.meta.steps || [];
+  const ctrls = m.meta.controls || [];
+  const strat = an?.strategy || m.meta.strategy;
+  const appTool = an?.tools?.find((t) => t.tool === "application");
+  const details = (mems > 0 && typeof m.meta.memories![0] === "object") || recalls > 0 || m.meta.plan || (v && v.problemes?.length) || mods.length > 0 || !!an || steps.length > 0;
   return (
     <div className="msg assistant">
       <div className="msg-head">
         <span className="who">{name}</span>
         {m.model && <span className="tag" title={m.meta.reason}>{shortModel(m.model)}</span>}
         {m.meta.route_label && <span className="tag ghost">{m.meta.route_label}</span>}
+        {strat && <span className="tag ghost" title={an ? `Complexité ${an.complexity} — ${an.reasons.join(", ")}` : ""}>{STRAT_TAG[strat] || strat}{steps.length ? ` · ${steps.filter((x) => x.state === "terminée").length}/${steps.length}` : ""}</span>}
+        {ctrls.length > 0 && <span className={`tag ${ctrls.some((c) => c.level === "erreur") ? "warn" : "ghost"}`} title={ctrls.map((c) => c.text).join("\n")}>Contrôle : {ctrls.length} point{ctrls.length > 1 ? "s" : ""} d'attention</span>}
         {mems > 0 && <span className="tag ghost">{mems} souvenir{mems > 1 ? "s" : ""} utilisé{mems > 1 ? "s" : ""}</span>}
         {srcs.length > 0 && <span className="tag ok">{cited.length ? `${cited.length} source${cited.length > 1 ? "s" : ""} citée${cited.length > 1 ? "s" : ""}` : `${srcs.length} passage${srcs.length > 1 ? "s" : ""} consulté${srcs.length > 1 ? "s" : ""}`}</span>}
         {m.meta.kb_miss && <span className="tag ghost" title="La base de connaissances ne contenait aucun passage sur cette question">Sans source documentaire</span>}
@@ -357,6 +391,26 @@ function Bubble({ m, name, goDoc, research, goResearch }: { m: Message; name: st
       </div>
       {open && (
         <div className="trace">
+          {an && (
+            <div><h4>Analyse de la demande</h4>
+              <ul className="mods">
+                <li><b>Objectif</b><span>{an.objective}</span></li>
+                <li><b>Complexité</b><span>{an.complexity}{an.reasons?.length ? ` — ${an.reasons.join(", ")}` : ""}</span></li>
+                <li><b>Stratégie</b><span>{an.strategy_label}</span></li>
+                <li><b>Vérification</b><span>{an.verify ? "oui" : "non"} — {an.verify_reason}</span></li>
+                {an.resources?.length > 0 && <li><b>Ressources</b><span>{an.resources.join(" · ")}</span></li>}
+                {an.tools?.length > 0 && <li><b>Outils envisagés</b><span>{an.tools.map((t) => t.label + (t.needs_confirmation ? " (avec votre accord)" : "")).join(" · ")}</span></li>}
+                {an.repeated && <li><b>Question répétée</b><span>déjà posée dans cette conversation : la réponse doit compléter, pas répéter</span></li>}
+                {(an.notes || []).map((n, i) => <li key={i}><b>Changement</b><span>{n}</span></li>)}
+              </ul></div>
+          )}
+          {steps.length > 0 && (
+            <div><h4>Étapes exécutées</h4>
+              <ol className="steps">{steps.map((x) => <li key={x.n} className={`st-${x.state.replace(/\s/g, "-")}`}>
+                <span className="st-ico">{STEP_ICON[x.state] || "○"}</span><b>{x.title}</b> <i>{x.state}{x.note ? ` — ${x.note}` : ""}</i>
+                {x.summary && <p>{x.summary}{x.summary.length >= 280 ? "…" : ""}</p>}</li>)}</ol></div>
+          )}
+          {ctrls.length > 0 && <div><h4>Contrôles automatiques</h4><ul>{ctrls.map((c, i) => <li key={i}>{c.level === "erreur" ? "Erreur : " : "Attention : "}{c.text}</li>)}</ul></div>}
           {m.meta.plan && <div><h4>Plan de résolution</h4><pre>{m.meta.plan}</pre></div>}
           {mods.length > 0 && (
             <div><h4>Modules consultés{m.meta.domain ? ` — domaine identifié : ${m.meta.domain}` : ""}</h4>
@@ -369,7 +423,7 @@ function Bubble({ m, name, goDoc, research, goResearch }: { m: Message; name: st
           )}
           {mems > 0 && typeof m.meta.memories![0] === "object" && (
             <div><h4>Souvenirs transmis au modèle</h4>
-              <ul>{m.meta.memories!.map((x: any) => <li key={x.id}><span className="cat">{x.category}</span> {x.content.slice(0, 220)}</li>)}</ul></div>
+              <ul>{m.meta.memories!.map((x: any) => <li key={x.id}><span className="cat">{x.category}</span>{x.project && <span className="cat">{x.project}</span>} {x.content.slice(0, 220)}{x.found_by === "reformulation" && <i className="muted"> — retrouvé par recherche reformulée</i>}</li>)}</ul></div>
           )}
           {recalls > 0 && <div><h4>Anciennes conversations consultées</h4><ul>{m.meta.recalls!.map((r, i) => <li key={i}>{r.title}</li>)}</ul></div>}
           {v && v.problemes?.length > 0 && <div><h4>Problèmes relevés par le contrôle</h4><ul>{v.problemes.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
@@ -385,6 +439,13 @@ function Bubble({ m, name, goDoc, research, goResearch }: { m: Message; name: st
             </button>
           ))}
           {cited.length > 0 && uncited.length > 0 && <p className="muted small">{uncited.length} autre{uncited.length > 1 ? "s" : ""} passage{uncited.length > 1 ? "s" : ""} consulté{uncited.length > 1 ? "s" : ""}, non cité{uncited.length > 1 ? "s" : ""}.</p>}
+        </div>
+      )}
+      {!m.pending && appTool && appTool.query && (
+        <div className="notice info"><Icon name="bolt" />
+          {m.meta.launched ? <span>{m.meta.launched} a été lancé à votre demande.</span> : (<>
+            <span>{name} peut lancer {appTool.name}, une application de votre liste autorisée. Rien n'est lancé sans votre accord.</span>
+            <button className="btn" onClick={() => launch(appTool.query!)}>Lancer {appTool.name}</button></>)}
         </div>
       )}
       {!m.pending && m.meta.research_offer && (

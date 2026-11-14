@@ -15,8 +15,30 @@ from jarvis_core.server import App, serve  # noqa: E402
 
 def script(body):
     s = json.dumps(body, ensure_ascii=False)
+    # --- cerveau central : tâche complexe découpée en étapes
+    if "planificateur d'un assistant" in s:
+        return json.dumps({"objectif": "Organiser les révisions du partiel de RDM", "etapes": [
+            {"titre": "Chapitres à revoir", "consigne": "Lister les chapitres de RDM du partiel", "depend_de": []},
+            {"titre": "Planning sur deux semaines", "consigne": "Répartir les chapitres sur deux semaines", "depend_de": [1]},
+            {"titre": "Exercices types", "consigne": "Proposer trois exercices types", "depend_de": [1]}]}, ensure_ascii=False)
+    if "Tu exécutes UNE étape" in s:
+        n = s.split("Étape ")[1].split(" ")[0]
+        return {"1": "Traction, flexion, torsion, flambage.", "2": "Semaine 1 : traction et flexion. Semaine 2 : torsion et flambage.",
+                "3": "1) Poutre en flexion 2) Arbre en torsion 3) Flambage d'Euler"}[n]
+    if "vérificateur rigoureux" in s and "plan de révision" in s:
+        return '{"ok": true, "problemes": []}'
+    if "<etapes>" in s:
+        return "Voici votre **plan de révision** : traction et flexion la première semaine, torsion et flambage la seconde."
     if "Tu gères la mémoire" in s:
-        if "BUT GMP" in s.split("Échange :")[-1]:
+        import re
+        ex = s.split("Échange :")[-1]
+        known = re.search(r"#(\d+) L'utilisateur est étudiant en BUT GMP", s)
+        if "deuxième année" in ex and known:
+            return json.dumps([{"contenu": "L'utilisateur est étudiant en deuxième année de BUT GMP à Limoges",
+                                "categorie": "profil", "nature": "personnelle", "importance": 5, "type": "durable",
+                                "remplace": int(known.group(1)), "raison": "il est passé en deuxième année"}],
+                              ensure_ascii=False)
+        if "BUT GMP" in ex:
             return ('[{"contenu": "L\'utilisateur est étudiant en BUT GMP à Limoges", "categorie": "profil", '
                     '"importance": 5, "type": "durable", "jours": null}]')
         return "[]"
