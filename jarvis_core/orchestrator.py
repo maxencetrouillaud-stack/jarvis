@@ -108,6 +108,7 @@ def assess(text, route, small_talk=False):
         reasons.append(f"demande longue ({n} caractères)")
     elif n > 250:
         score += 1
+        reasons.append(f"demande assez longue ({n} caractères)")
     items = len(_LIST.findall(t))
     if items >= 3:
         score += 2
