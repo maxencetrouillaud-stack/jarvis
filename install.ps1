@@ -15,7 +15,8 @@ if (-not $py) {
 }
 $tmp = Join-Path $env:TEMP "jarvis-install.py"
 Write-Host "Telechargement de l'installateur de Jarvis..."
-Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/maxencetrouillaud-stack/jarvis/main/install.py" -OutFile $tmp
+$t = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/maxencetrouillaud-stack/jarvis/main/install.py?t=$t" -OutFile $tmp
 $env:JARVIS_NO_PAUSE = "1"
 & $py.Source @args3 $tmp --from-github
 Remove-Item $tmp -ErrorAction SilentlyContinue

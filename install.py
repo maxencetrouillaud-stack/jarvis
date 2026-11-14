@@ -71,7 +71,8 @@ def local_files():
 
 
 def remote_files(repo, raw):
-    m = json.loads(get(raw.format(repo=repo, ref="main", path="manifest.json")).decode("utf-8"))
+    # « ?t= » contourne le cache de GitHub (5 minutes) : on lit toujours le dernier manifeste publié
+    m = json.loads(get(raw.format(repo=repo, ref="main", path="manifest.json") + f"?t={int(time.time())}").decode("utf-8"))
     ref = m.get("ref") or f"v{m['version']}"
     return m, lambda p: get(raw.format(repo=repo, ref=ref, path=urllib.parse.quote(p)))
 

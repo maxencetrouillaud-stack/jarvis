@@ -109,6 +109,8 @@ class Updater:
     # ---------- réseau ----------
     def _get(self, path, ref="main", timeout=20):
         url = self.raw.format(repo=self.repo(), ref=ref, path=urllib.parse.quote(path))
+        if ref == "main":   # contourne le cache de GitHub (5 minutes) pour voir tout de suite une nouvelle version
+            url += f"?t={int(time.time())}"
         req = urllib.request.Request(url, headers={"User-Agent": f"Jarvis/{__version__}", "Cache-Control": "no-cache"})
         try:
             with self.opener.open(req, timeout=timeout) as r:
