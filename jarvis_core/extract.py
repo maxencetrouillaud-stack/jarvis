@@ -220,7 +220,8 @@ def pptx_segments(data: bytes):
             if txt:
                 paras.append(txt)
         if paras:
-            segs.append((f"diapo {int(re.search(r'(\d+)\.xml$', n).group(1))}", clean("\n".join(paras))))
+            num = int(re.search(r"(\d+)\.xml$", n).group(1))   # hors de la f-string : Python < 3.12 l'exige
+            segs.append((f"diapo {num}", clean("\n".join(paras))))
     return segs
 
 

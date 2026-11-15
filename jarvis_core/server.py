@@ -16,7 +16,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import __version__, kb_api, launcher, memory as mem
+from . import __version__, kb_api, launcher, memory as mem, studio_api
+from .artifacts import Artifacts, CSP as ARTIFACT_CSP
+from .browser import Browser
+from .collect import CollectError, fetch as fetch_url
+from .images import ImageService, sniff
+from .missions import Missions
+from .workspace import EventBus, Workspace
 from .backup import Backups
 from .brain import ROUTES, Brain
 from .collect import KnowledgeService
@@ -64,6 +70,20 @@ class App:
             self.settings.update({"apps": launcher.DEFAULT_APPS})
         self.token = secrets.token_urlsafe(32)
         self._migrate_imported_documents()
+        # espace de travail commun : artefacts, navigateur, images, missions multi-outils
+        self.bus = EventBus()
+        self.ws = Workspace(self.store, self.home, self.bus, self.token)
+        self.artifacts = Artifacts(self.ws, self.brain, self.settings)
+        self.images = ImageService(self.ws, self.settings, self.keys)
+        self.allow_private = bool(ko.get("allow_private", False))
+        self.browser = Browser(self.ws, self.settings, self.keys, self.research, self.allow_private,
+                               self.research.wiki, (ko.get("endpoints") or {}).get("brave"), ko.get("install_cmds"))
+        self.missions = Missions(self)
+        self.brain.missions = self.missions
+        try:
+            self.ws.purge_temporary(int(self.settings.get("images_keep_days", 7)))
+        except Exception as e:
+            print(f"Nettoyage des images temporaires impossible : {e}")
 
     def _migrate_imported_documents(self):
         """v0.1 rangeait les documents importés dans la mémoire personnelle : on les déplace dans la base
@@ -84,6 +104,10 @@ class App:
                 self.store.delete_memory(mid)
 
     def close(self):
+        try:
+            self.browser.shutdown()
+        except Exception:
+            pass
         self.store.close()
         self.kb.close()
 
@@ -107,6 +131,8 @@ class App:
             "modules": [{"key": k, "label": l, "color": c} for k, l, c in MODULES],
             "update": self.updater.info(),
             "first_run": not self.settings.get("user_name") and self.store.stats()["messages"] == 0,
+            "workspace": self.ws.stats(),
+            "artifact_kinds": studio_api.ARTIFACT_KINDS,
         }
 
 
@@ -175,6 +201,10 @@ def make_handler(app: App):
                 self._guard(False)
                 if method != "GET":
                     raise HttpError(405, "Méthode refusée")
+                if path.startswith("/media/"):
+                    return self._media(path, parse_qs(url.query))
+                if path.startswith("/sandbox/"):
+                    return self._sandbox(path, parse_qs(url.query))
                 return self._static(path)
             except HttpError as e:
                 self._json({"error": str(e)}, e.code)
@@ -209,7 +239,7 @@ def make_handler(app: App):
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Security-Policy",
-                                 "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                                 "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
                                  "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
                 self.end_headers()
                 self.wfile.write(body)
@@ -221,6 +251,123 @@ def make_handler(app: App):
             if target.suffix == ".js":
                 ctype = "text/javascript; charset=utf-8"
             self._send(200, target.read_bytes(), ctype)
+
+        # ----- médias signés et artefacts isolés (chargés par <img> et <iframe> : pas d'en-tête de jeton possible) -----
+        def _media(self, path, q):
+            sig = (q.get("s") or [""])[0]
+            m = re.match(r"^/media/r/(\d+)$", path)
+            if m:
+                rid = int(m.group(1))
+                if not app.ws.check(f"r{rid}", sig):
+                    raise HttpError(403, "Lien expiré — rechargez la fenêtre")
+                p, mime = app.ws.resource_path(rid)
+                if not p:
+                    raise HttpError(404, "Fichier introuvable")
+                r = app.ws.resource(rid)
+                data = p.read_bytes()
+                ctype = mime or "application/octet-stream"
+                dl = (q.get("dl") or [""])[0] == "1" or not ctype.startswith("image/") or ctype == "image/svg+xml"
+                self.send_response(200)
+                self.send_header("Content-Type", ctype if not dl else "application/octet-stream")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "private, max-age=86400")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+                if dl:
+                    name = re.sub(r'[\\/:*?"<>|]+', "_", r["title"] if r else "fichier")
+                    if not re.search(r"\.\w{2,5}$", name):
+                        name += p.suffix
+                    from urllib.parse import quote
+                    self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(name)}")
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/media/p":   # images des pages lues en mode lecture (adresses signées par Jarvis)
+                url = (q.get("u") or [""])[0]
+                if not url or not app.ws.check("p" + url, sig):
+                    raise HttpError(403, "Adresse non autorisée")
+                try:
+                    data, ctype, _ = fetch_url(url, app.allow_private, 20)
+                except CollectError as e:
+                    raise HttpError(502, str(e)) from None
+                real = sniff(data) or ("image/svg+xml" if b"<svg" in data[:2000] else "")
+                if not real:
+                    raise HttpError(415, "Ce n'est pas une image")
+                self.send_response(200)
+                self.send_header("Content-Type", real)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "private, max-age=3600")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            raise HttpError(404, "Introuvable")
+
+        def _sandbox(self, path, q):
+            m = re.match(r"^/sandbox/a/(\d+)$", path)
+            if not m:
+                raise HttpError(404, "Introuvable")
+            aid = int(m.group(1))
+            if not app.ws.check(f"a{aid}", (q.get("s") or [""])[0]):
+                raise HttpError(403, "Lien expiré — rechargez la fenêtre")
+            v = (q.get("v") or [""])[0]
+            try:
+                doc, _ = app.artifacts.render(aid, int(v) if v.isdigit() else None)
+            except KeyError:
+                raise HttpError(404, "Artefact introuvable") from None
+            body = doc.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            # origine opaque (sandbox sans allow-same-origin) + aucune connexion réseau : le code généré ne peut ni
+            # lire l'interface de Jarvis ni appeler son API ni envoyer de données
+            self.send_header("Content-Security-Policy", ARTIFACT_CSP + "; sandbox allow-scripts allow-modals "
+                             "allow-downloads allow-pointer-lock")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _events(self, q):
+            """Flux d'événements de l'espace de travail (missions, agents, navigateur, artefacts, images)."""
+            try:
+                last = int((q.get("since") or ["0"])[0])
+            except ValueError:
+                last = 0
+            if last > app.bus.last_id:
+                last = 0   # Jarvis a redémarré : on repart du début
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(f"event: hello\ndata: {json.dumps({'last': app.bus.last_id})}\n\n".encode())
+                self.wfile.flush()
+                t_end = time.time() + 600
+                while time.time() < t_end:
+                    evs = app.bus.since(last, 15)
+                    if not evs:
+                        self.wfile.write(b": ping\n\n")
+                    for ev in evs:
+                        last = ev["id"]
+                        self.wfile.write(f"id: {ev['id']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                pass
+
+        def _raw(self, res):
+            self.send_response(200)
+            self.send_header("Content-Type", res.ctype)
+            self.send_header("Content-Length", str(len(res.data)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if res.filename:
+                from urllib.parse import quote
+                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(res.filename)}")
+            self.end_headers()
+            self.wfile.write(res.data)
 
         # ----- API -----
         def _api(self, method, path, q):
@@ -239,6 +386,16 @@ def make_handler(app: App):
                 if res is None:
                     raise HttpError(404, "Route inconnue")
                 return self._json(res)
+            if path == "/api/events" and method == "GET":
+                return self._events(q)
+            try:
+                res = studio_api.handle(app, method, path, q, self._body)
+            except studio_api.Bad as e:
+                raise HttpError(e.code, str(e)) from None
+            if isinstance(res, studio_api.Raw):
+                return self._raw(res)
+            if res is not None:
+                return self._json(res)
             m = re.match(r"^/api/(conversations|memories)/([\w-]+)$", path)
 
             if path == "/api/state" and method == "GET":
@@ -254,11 +411,21 @@ def make_handler(app: App):
                     body["research_on_gap"] = "proposer"
                 for key, allowed in (("orchestrator_decompose", ("auto", "jamais")),
                                      ("orchestrator_verify", ("auto", "toujours", "jamais")),
-                                     ("memory_update_mode", ("valider", "auto"))):
+                                     ("memory_update_mode", ("valider", "auto")),
+                                     ("browser_engine", ("auto", "lecture", "chromium")),
+                                     ("browser_agent_engine", ("lecture", "chromium")),
+                                     ("browser_chromium_channel", ("auto", "msedge", "chrome", "chromium")),
+                                     ("browser_search_engine", tuple(studio_api.SEARCH_PAGES)),
+                                     ("image_provider", ("gemini",)),
+                                     ("image_size", ("", "1K", "2K", "4K"))):
                     if key in body and body[key] not in allowed:
                         body[key] = allowed[0]
+                if "image_model" in body:
+                    body["image_model"] = re.sub(r"[^\w.\-]", "", str(body["image_model"] or ""))[:80]
                 for key, lo, hi in (("orchestrator_max_steps", 2, 8), ("orchestrator_max_calls", 4, 40),
-                                    ("orchestrator_max_seconds", 30, 1800)):
+                                    ("orchestrator_max_seconds", 30, 1800), ("mission_max_steps", 2, 10),
+                                    ("mission_max_seconds", 60, 3600), ("mission_pages", 1, 6),
+                                    ("mission_fix_attempts", 0, 3), ("images_keep_days", 1, 90)):
                     if key in body:
                         try:
                             body[key] = max(lo, min(hi, int(body[key])))
@@ -466,7 +633,10 @@ def make_handler(app: App):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            gen = app.brain.chat(cid, text, body.get("model") or "auto", body.get("deep"))
+            opts = {"artifact_id": body.get("artifact_id"), "selection": body.get("selection"),
+                    "tool": body.get("tool") if body.get("tool") in ("image", "artifact", "web", "page") else None,
+                    "tab_id": body.get("tab_id")}
+            gen = app.brain.chat(cid, text, body.get("model") or "auto", body.get("deep"), opts)
             try:
                 for ev in gen:
                     self.wfile.write(f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode("utf-8"))

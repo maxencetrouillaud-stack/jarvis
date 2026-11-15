@@ -93,6 +93,7 @@ class Brain:
     def __init__(self, settings, keys, store, kb=None):
         self.settings, self.keys, self.store, self.kb = settings, keys, store, kb
         self.hub = None  # branché par l'application : choix des modules à consulter pour chaque question
+        self.missions = None  # branché par l'application : missions multi-outils (navigateur, images, artefacts)
         self._models = {}
         self._models_at = 0
         self._lock = threading.Lock()
@@ -344,9 +345,13 @@ class Brain:
         return merged
 
     # ---------- conversation ----------
-    def chat(self, cid, text, requested="auto", deep=None):
-        """Générateur d'événements pour un tour de conversation, piloté par le cerveau central."""
+    def chat(self, cid, text, requested="auto", deep=None, opts=None):
+        """Générateur d'événements pour un tour de conversation, piloté par le cerveau central.
+
+        opts (facultatif) : artifact_id (artefact ouvert à côté de la conversation), selection (élément choisi dans
+        l'aperçu), tool (outil imposé : image, artifact, web, page), tab_id (onglet du Navigateur à lire)."""
         text = text.strip()
+        opts = opts or {}
         deep = self.settings.get("deep_mode_default") if deep is None else deep
         conv = self.store.get_conversation(cid)
         if not conv:
@@ -368,6 +373,23 @@ class Brain:
         if first:
             title = re.sub(r"\s+", " ", text)[:60] + ("…" if len(text) > 60 else "")
             self.store.rename_conversation(cid, title)
+
+        # outils (navigateur, images, artefacts) : le cerveau central décide s'il faut une mission multi-outils
+        if self.missions:
+            self._set_activity("thinking", "Choix des outils")
+            since = self.missions.ws.bus.last_id
+            try:
+                mid = self.missions.from_chat(cid, text, requested, opts.get("artifact_id"), opts.get("selection"),
+                                              opts.get("tool"), opts.get("tab_id"))
+            except (ValueError, ProviderError) as e:
+                mid = None
+                yield {"type": "status", "text": f"Outils indisponibles : {e}"}
+            if mid:
+                try:
+                    yield from self._chat_mission(cid, mid, since, user_id, title, text)
+                finally:
+                    self._set_activity("idle")
+                return
 
         self._set_activity("thinking", "Analyse de la demande")
         qvec = self.embed(text)
@@ -598,6 +620,39 @@ class Brain:
             if mid:
                 log(mid, False)
             self._set_activity("idle")
+
+    def _chat_mission(self, cid, mid, since, user_id, title, text):
+        """Relaie dans la conversation les événements d'une mission (elle continue même si la fenêtre se ferme)."""
+        self._set_activity("thinking", "Mission en cours")
+        msg_id, model = None, None
+        for ev in self.missions.follow(mid, since):
+            kind = ev.get("kind")
+            if kind == "delta":
+                yield {"type": "delta", "text": ev.get("text", "")}
+                continue
+            data = {k: v for k, v in ev.items() if k not in ("topic", "id", "at")}
+            if kind == "step" and ev.get("state") == "en cours":
+                self._set_activity("thinking", f"{ev.get('agent_label', '')} : {ev.get('label', '')}")
+            yield {"type": "mission", **data}
+            if kind == "done":
+                msg_id = ev.get("message_id")
+        m = self.missions.get(mid)
+        meta, content = {}, ""
+        if msg_id:
+            with self.store.lock:
+                row = self.store.db.execute("SELECT content, model, meta FROM messages WHERE id=?", (msg_id,)).fetchone()
+            if row:
+                content, model = row["content"], row["model"]
+                meta = json.loads(row["meta"] or "{}")
+        yield {"type": "done", "message_id": msg_id, "user_message_id": user_id, "title": title, "model": model,
+               "meta": meta, "content": content, "mission_status": m["status"] if m else None}
+        if self.settings.get("memory_auto_extract") and content.strip() and m and m["status"] == "terminée":
+            ref = self.missions._ref("auto", text)
+            if ref:
+                self._set_activity("thinking", "Mise à jour de la mémoire")
+                new = self.learn(self.utility_ref(ref), text, content, [], cid)
+                yield {"type": "memories", "saved": new["saved"], "updated": new.get("updated", []),
+                       "proposed": new.get("proposed", []), "error": new.get("error")}
 
     def _verify(self, ref, question, answer):
         try:

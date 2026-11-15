@@ -216,7 +216,7 @@ class Store:
     def create_conversation(self, title="Nouvelle conversation"):
         cid, now = uuid.uuid4().hex[:16], time.time()
         with self.lock:
-            self.db.execute("INSERT INTO conversations VALUES(?,?,?,?)", (cid, title, now, now))
+            self.db.execute("INSERT INTO conversations(id,title,created,updated) VALUES(?,?,?,?)", (cid, title, now, now))
             self.db.commit()
         return {"id": cid, "title": title, "created": now, "updated": now}
 

@@ -9,6 +9,7 @@ Ajouter un futur fournisseur = ajouter une classe ici et l'inscrire dans REGISTR
 Aucune dépendance externe : uniquement la bibliothèque standard.
 """
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -178,8 +179,10 @@ class Gemini(Provider):
         j = _json(f"{self.base}/models?pageSize=200", self._h(), timeout=20)
         out = []
         for m in j.get("models", []):
-            if "generateContent" in m.get("supportedGenerationMethods", []):
-                out.append(m["name"].split("/", 1)[-1])
+            name = m["name"].split("/", 1)[-1]
+            # les modèles d'images (« -image ») ne savent pas tenir une conversation : ils vont dans Images
+            if "generateContent" in m.get("supportedGenerationMethods", []) and not re.search(r"-image\b|imagen", name):
+                out.append(name)
         return out
 
     def stream(self, model, system, messages, temperature=0.7, max_tokens=4096):

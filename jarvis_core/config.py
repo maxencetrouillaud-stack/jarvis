@@ -78,6 +78,23 @@ DEFAULTS = {
     "voice_silence_ms": 1300,      # silence qui marque la fin d'une phrase
     "voice_followup_s": 12,        # durée d'écoute après une réponse, sans redire le mot-clé
     "apps": None,                  # applications que l'assistant a le droit de lancer (None = liste d'origine)
+    # --- espace de travail : missions multi-outils, artefacts, navigateur, images (0.7)
+    "mission_auto_tools": True,    # Jarvis choisit seul les outils (images, artefacts, navigateur) depuis la conversation
+    "mission_web_auto": True,      # une demande qui exige Internet déclenche une recherche web vérifiée
+    "mission_confirm_plan": False, # valider chaque plan de mission avant son exécution
+    "mission_max_steps": 8,
+    "mission_max_seconds": 900,
+    "mission_pages": 4,            # pages lues au plus par recherche web
+    "mission_fix_attempts": 1,     # corrections automatiques d'un artefact en erreur
+    "mission_runtime_check": True, # exécuter l'artefact dans un Chromium isolé pour y chercher les erreurs
+    "browser_engine": "auto",      # "auto" (Chromium s'il est installé), "lecture" ou "chromium"
+    "browser_agent_engine": "lecture",
+    "browser_chromium_channel": "auto",   # navigateur piloté : auto (Edge sous Windows), msedge, chrome, chromium
+    "browser_search_engine": "duckduckgo",  # moteur des recherches tapées dans la barre d'adresse (mode Chromium)
+    "image_provider": "gemini",
+    "image_model": "",             # vide = modèle par défaut du fournisseur
+    "image_size": "",              # "", "1K", "2K" ou "4K"
+    "images_keep_days": 7,         # images générées non enregistrées : effacées après ce délai
     "providers": {
         "anthropic": {"enabled": True, "base_url": "https://api.anthropic.com"},
         "openai": {"enabled": True, "base_url": "https://api.openai.com/v1"},

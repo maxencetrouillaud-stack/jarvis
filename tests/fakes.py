@@ -258,3 +258,82 @@ class FakeScience:
     def stop(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+def png(rgb=(30, 144, 255), w=4, h=4):
+    """Petite image PNG valide (pour les faux générateurs d'images)."""
+    import struct
+    import zlib
+    raw = b"".join(b"\x00" + bytes(rgb) * w for _ in range(h))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+class FakeImages:
+    """Faux point d'accès Gemini generateContent pour les modèles d'images (format de fil de l'API REST).
+
+    Il sert à vérifier que Jarvis envoie des requêtes au bon format et lit les images renvoyées ; il ne remplace
+    pas un essai avec une vraie clé Gemini."""
+
+    def __init__(self, models=("gemini-3.1-flash-image", "gemini-2.5-flash-image", "gemini-2.5-flash")):
+        self.models = list(models)
+        self.bodies, self.paths = [], []
+        self.legacy_only = False      # refuse responseFormat (ancienne API : imageConfig)
+        self.fail = None              # (code, message)
+        self.block = None             # motif de refus de sécurité
+        self.color = (30, 144, 255)
+        me = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _j(self, obj, code=200):
+                b = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+            def do_GET(self):
+                if self.path.startswith("/models"):
+                    return self._j({"models": [{"name": f"models/{m}", "supportedGenerationMethods": ["generateContent"]}
+                                               for m in me.models]})
+                self._j({}, 404)
+
+            def do_POST(self):
+                import base64 as b64
+                n = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(n) or b"{}")
+                me.paths.append(self.path)
+                me.bodies.append(body)
+                if self.headers.get("x-goog-api-key") != "cle-test":
+                    return self._j({"error": {"code": 401, "message": "API key not valid"}}, 401)
+                if me.fail:
+                    return self._j({"error": {"code": me.fail[0], "message": me.fail[1]}}, me.fail[0])
+                gen = body.get("generationConfig", {})
+                if me.legacy_only and "responseFormat" in gen:
+                    return self._j({"error": {"code": 400, "message": 'Invalid JSON payload received. Unknown name '
+                                                                      '"responseFormat" at \'generation_config\''}}, 400)
+                if not self.path.endswith(":generateContent"):
+                    return self._j({}, 404)
+                if me.block:
+                    return self._j({"candidates": [{"finishReason": me.block, "content": {"parts": []}}]})
+                img = b64.b64encode(png(me.color)).decode()
+                return self._j({"candidates": [{"finishReason": "STOP", "content": {"role": "model", "parts": [
+                    {"text": "réflexion", "thought": True},
+                    {"text": "Voici l'image."},
+                    {"inlineData": {"mimeType": "image/png", "data": img}}]}}]})
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.httpd.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
