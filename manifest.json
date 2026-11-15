@@ -1,7 +1,7 @@
 {
  "app": "jarvis",
- "version": "0.7.0",
- "notes": "Espace de travail : artefacts interactifs isolés, navigateur intégré (lecture + Chromium), génération d'images Gemini, projets, missions multi-outils avec agents",
+ "version": "0.7.1",
+ "notes": "Images gratuites : Cloudflare Workers AI (FLUX.2 klein, FLUX.1 schnell), réglage dans Paramètres",
  "published": "2026-11-15",
  "files": {
   "Installer Jarvis.bat": {
@@ -13,8 +13,8 @@
    "size": 453
   },
   "README.md": {
-   "sha256": "dfd4256cef55486a9683daae428e184eb9123df6266537384201d10df0464f55",
-   "size": 36656
+   "sha256": "652ef5615a536005be07b1139fba8d65045274602f5117292a0abaeb2ae2348f",
+   "size": 37543
   },
   "install.ps1": {
    "sha256": "80660f9981b5a4ddf65ef8209d7b8cd5e16ffcb618661ef5825c217129e0dff8",
@@ -29,7 +29,7 @@
    "size": 27304
   },
   "jarvis_core/__init__.py": {
-   "sha256": "6b3abb0e3489e261df6903aab1f03a8b441f4cf87745b852d6bb793b9961892a",
+   "sha256": "d1f148ab78af65dd55718a2196bc475239be13c28f941969f33f2b94004c847e",
    "size": 104
   },
   "jarvis_core/__main__.py": {
@@ -57,8 +57,8 @@
    "size": 34565
   },
   "jarvis_core/config.py": {
-   "sha256": "d687eb98399ee2fcf7c47235da7ea86911195efff5ede717c43c7b77e0a82d5e",
-   "size": 7678
+   "sha256": "1cfe5e23c0797fcfd46708ff967436fb40a4309da7922317484b9168cf25809c",
+   "size": 8075
   },
   "jarvis_core/extract.py": {
    "sha256": "b20d2949ff98cb078689dfcfe214fcd07a18e5789d7dd7f4bffadd6a942328e7",
@@ -69,8 +69,8 @@
    "size": 23958
   },
   "jarvis_core/images.py": {
-   "sha256": "e1d6e88c78ec3a723890fd7be477734e7c82e8b7129485d7f8ff2a309d9c0f69",
-   "size": 14912
+   "sha256": "d1901afd35a6ff49f6836a4d466b9229ab4bee71fed55bd0cc13034e82ab6366",
+   "size": 25761
   },
   "jarvis_core/kb_api.py": {
    "sha256": "9663a9b88e57c5e5d1753918b50e59b89c78580cdc134c311373b8dbe23ab5c4",
@@ -113,16 +113,16 @@
    "size": 48052
   },
   "jarvis_core/server.py": {
-   "sha256": "f7b95f1189d8cf610cfec0f9cd934490f042da9ee28762b19a21b80cd7472efe",
-   "size": 40687
+   "sha256": "e868f5ba32ef8d5867c1a9d5401e4ea5b7dc3af18176ea73cfa165a6691f2e0f",
+   "size": 41348
   },
   "jarvis_core/sphere.py": {
    "sha256": "cfdb89c0ba922eee12a555a9ddd4c94c801005e7bf4c100a8074b4405139db18",
    "size": 25243
   },
   "jarvis_core/studio_api.py": {
-   "sha256": "3f14e2d679c007a7b0684d06f5fb22d5e4d78dd94c641f9adbcead3293fc9d68",
-   "size": 19092
+   "sha256": "a5f7dc543da6567194a6a43698b993a1250f233c1edcdb54af0326d30568375f",
+   "size": 20177
   },
   "jarvis_core/tools.py": {
    "sha256": "738bf329e0da027601fb971699f3901e34e7f23b406206bb56a7c259151744e6",
@@ -149,16 +149,16 @@
    "size": 223
   },
   "tests/demo_server.py": {
-   "sha256": "44e4252b025fa441bbace346b307ffc043ce0e7e975f9d559006a87026fa495b",
-   "size": 10832
+   "sha256": "97d3343de595151ad31b6d8ba478174dcb7bb8aca39f5dee1f6bed419a2c4121",
+   "size": 10885
   },
   "tests/e2e.mjs": {
-   "sha256": "0a46929e189b163b6335c5c5a99237552a90df2cc6a033fa0a8571b363d53fc2",
-   "size": 45917
+   "sha256": "6827a94c20c00cd2cd79e4e0fa5ec5c0a7b45a5fab49002e15fa070413668fe0",
+   "size": 46890
   },
   "tests/fakes.py": {
-   "sha256": "0940e6771f6a1a042aae1ae2121103f4a29649bfb29f56c5f8ab18914b472708",
-   "size": 17852
+   "sha256": "98e24b1d1bccff4498d7b36ea915f1e1a454bd540a0b948cb81129c531c4d98d",
+   "size": 21036
   },
   "tests/test_brain.py": {
    "sha256": "07d525d4211d317042c09a2446cfc0b5cd1a8981ec4b87a6ef0374edc347abee",
@@ -181,8 +181,8 @@
    "size": 11868
   },
   "tests/test_studio.py": {
-   "sha256": "4f3d93767fbc0094fbd1f597f48f7cb70a825af659b3cf36504b40a8d6d763ed",
-   "size": 40821
+   "sha256": "db07dd04b137efac61a221955a83b9d0f85ba5da6d9f41d77ce7237cf1cfd213",
+   "size": 44137
   },
   "tests/test_update.py": {
    "sha256": "2776c4879f7a4247bb915c7bec768c0b91ab1de6d25686282d36d8597dff56f8",
@@ -217,8 +217,8 @@
    "size": 6510
   },
   "ui/images.tsx": {
-   "sha256": "fe4ba0852a49c11521ad01961b5fe4f45e5b789bb89533371cd0df9a9a4f3361",
-   "size": 11263
+   "sha256": "56a45b0a0ebb0f05c745b9575903f9677bf63261e7c08aa19a613aded9ec7f91",
+   "size": 11353
   },
   "ui/kbtypes.ts": {
    "sha256": "54dfbf10bf8fdf2d5c740e1d3060a8d57c25397dc38114930d5867100b3188cd",
@@ -229,8 +229,8 @@
    "size": 43769
   },
   "ui/main.tsx": {
-   "sha256": "49fbe94b295e17374e04f08b0b4471e974c57265cc556903b11793e307c92a85",
-   "size": 9998
+   "sha256": "37cddd41c82105c029f2ccc8438a015426ec89fd523bafd6b389b4611951e231",
+   "size": 10065
   },
   "ui/panels.tsx": {
    "sha256": "5051708c0381303c414ae98aa42b988f3fb0dedb6b98412d6cb255236a68ab4c",
@@ -265,16 +265,16 @@
    "size": 12520
   },
   "ui/workspace_settings.tsx": {
-   "sha256": "5297d580769cbe9f3651ef5996dd3c7e6806dfd05cad5f2c3c717673f666e224",
-   "size": 9474
+   "sha256": "2c01db028f751d24ed85dbb3dadb8d3d1366175fd6cfcdf3a20b5f566c3a8aa0",
+   "size": 13798
   },
   "web/app.css": {
-   "sha256": "c72bfe07e3a8643f001416273bfdda1fb11c236fe292d5eea834f1d97d598d60",
-   "size": 60069
+   "sha256": "79bd7fcd4ec533703a2471b941f145b2183cbc4da934052c845dedd583f25e34",
+   "size": 60122
   },
   "web/app.js": {
-   "sha256": "4eba203a9074db88d37dcb8c1c201e83b221f08b5ead50e425f81715461a5386",
-   "size": 520149
+   "sha256": "f0116734ce214258c23444b64552162f3dbf25adfc474b6da945edf8cea68e43",
+   "size": 524468
   },
   "web/icon.svg": {
    "sha256": "565f170402e6bd608cfa9fb9712e7df88d8cb2163ede94e957d25a5c176e0c7d",
@@ -285,5 +285,5 @@
    "size": 389
   }
  },
- "ref": "0374214823dea8d9a97a4e6d047eeaf8b841d8f8"
+ "ref": "6d1cef51d9de2987f36dd5449bfc64c44c827aab"
 }
