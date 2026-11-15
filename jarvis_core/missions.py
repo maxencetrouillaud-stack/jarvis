@@ -660,9 +660,10 @@ class Missions:
             t = self.registry.get(st["tool"])
             out.append({"n": i + 1, "tool": t.name, "label": t.label, "agent": t.agent, "consigne": st.get("consigne", ""),
                         "args": st.get("args") or {}, "state": "en attente", "summary": "", "error": "", "attempts": 0})
+        cited = [int(x) for x in dict.fromkeys(re.findall(r"jarvis-image:(\d+)", goal)) if self.ws.resource(int(x))]
         plan = {"objective": goal, "steps": out, "needs": needs, "planner": planner, "approved": [],
                 "requested": requested, "data": {"selection": selection, "artifact_id": artifact_id,
-                                                 "last_image": last_image}}
+                                                 "last_image": last_image, "images": cited[:8]}}
         now = time.time()
         mid = self.ws._x("INSERT INTO missions(goal,status,project_id,conv_id,plan,created,updated) VALUES(?,?,?,?,?,?,?)",
                          (goal[:2000], "en cours", project_id, conv_id, json.dumps(plan, ensure_ascii=False), now, now))
@@ -746,6 +747,8 @@ class Missions:
         plan = m["plan"]
         cancel = self._cancel.setdefault(mid, threading.Event())
         results = [st.get("result") for st in plan["steps"] if st["state"] == "terminée"]
+        if (plan.get("data") or {}).get("images"):   # images désignées par l'utilisateur (jarvis-image:N)
+            results.insert(0, {"images": plan["data"]["images"], "text": ""})
         ctx = Context(self.ws, mid, m["project_id"], m["conv_id"], m["goal"], results,
                       lambda kind, **d: self._emit(mid, kind, **d), set(plan.get("approved", [])), cancel)
         ctx.data = dict(plan.get("data") or {})
@@ -849,6 +852,8 @@ class Missions:
 
     def _finish(self, mid, m, ctx, failed=None):
         g = ctx.gathered()
+        given = set((m["plan"].get("data") or {}).get("images") or [])
+        g["images"] = [i for i in g["images"] if i not in given]   # images fournies par l'utilisateur : pas « créées »
         steps = m["plan"]["steps"]
         if failed:
             for st in steps:
@@ -958,6 +963,9 @@ class Missions:
         rows = self.ws.resources(kind="image", conv_id=cid, limit=1)
         if rows and time.time() - rows[0]["created"] < 3 * 3600:
             last_image = rows[0]["id"]
+        cited = [int(x) for x in re.findall(r"jarvis-image:(\d+)", text) if self.ws.resource(int(x))]
+        if cited:            # image désignée explicitement (bouton « Modifier » d'une image)
+            last_image = cited[0]
         open_title = None
         if artifact_id:
             a = self.app.artifacts.get(artifact_id)

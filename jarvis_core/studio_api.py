@@ -120,8 +120,10 @@ def handle(app, method, path, q, body):
             return Raw(project_export(app, pid), "application/zip", _slug(ws.project(pid)["name"]) + ".zip")
         if sub == "/missions" and method == "POST":
             b = body()
+            needs = [n for n in (b.get("needs") or []) if n in ("web", "image", "artifact")] or None
             try:
-                mid = app.missions.launch(str(b.get("goal") or ""), project_id=pid, requested=b.get("model") or "auto")
+                mid = app.missions.launch(str(b.get("goal") or ""), project_id=pid, requested=b.get("model") or "auto",
+                                          needs=needs)
             except ValueError as e:
                 raise Bad(400, str(e)) from None
             return app.missions.view(mid)
@@ -372,9 +374,11 @@ def handle(app, method, path, q, body):
                                  min(200, _int(arg("limit"), 50)))
     if path == "/api/missions" and method == "POST":
         b = body()
+        needs = [n for n in (b.get("needs") or []) if n in ("web", "image", "artifact")] or None
         try:
             mid = app.missions.launch(str(b.get("goal") or ""), conv_id=b.get("conv_id"),
-                                      project_id=_pid(b.get("project_id")), requested=b.get("model") or "auto")
+                                      project_id=_pid(b.get("project_id")), requested=b.get("model") or "auto",
+                                      needs=needs)
         except ValueError as e:
             raise Bad(400, str(e)) from None
         return app.missions.view(mid)

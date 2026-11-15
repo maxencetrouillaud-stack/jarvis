@@ -1,4 +1,4 @@
-const TOKEN = document.querySelector('meta[name="jarvis-token"]')?.getAttribute("content") || "";
+export const TOKEN = document.querySelector('meta[name="jarvis-token"]')?.getAttribute("content") || "";
 
 export interface Provider {
   id: string; label: string; local: boolean; needs_key: boolean; enabled: boolean;
@@ -22,6 +22,8 @@ export interface AppState {
   version: string; settings: Settings; providers: Provider[]; routes: Record<string, string>;
   categories: string[]; kinds: string[]; natures: string[]; strategies: Record<string, string>; stats: Stats; kb: Record<string, any>; modules: { key: string; label: string; color: string }[]; key_storage: string; data_dir: string;
   default_personality: string; embedding_active: string; first_run: boolean;
+  workspace?: { projects: number; artifacts: number; images: number; sources: number; missions: number; missions_running: number };
+  artifact_kinds?: Record<string, string>;
 }
 export interface Memory {
   id: number; content: string; category: string; importance: number; kind: string; source: string;
@@ -44,7 +46,12 @@ export interface Meta {
   domain?: string; research_offer?: string; research_id?: number;
   analysis?: Analysis; steps?: Step[]; controls?: { level: string; text: string }[]; strategy?: string; launched?: string;
   conflicts?: { label: string; a: { n: number; text: string; title: string }; b: { n: number; text: string; title: string } }[];
+  mission_id?: number; artifacts?: number[]; images?: number[];
+  web_sources?: { n: number; url: string; title: string; excerpt: string; resource_id?: number; quotes?: number; provider?: string }[];
+  mission?: { objective: string; planner?: string; steps: MissionStep[] };
+  live?: { steps: MissionStep[]; status?: string; approval?: { n: number; action: string; detail: string } | null; planner?: string; objective?: string; progress?: string };
 }
+export interface MissionStep { n: number; label: string; agent: string; agent_label?: string; state: string; summary?: string; error?: string; tool?: string }
 export interface Message {
   id?: number; role: "user" | "assistant"; content: string; model?: string | null; meta: Meta;
   created?: number; pending?: boolean; status?: string; error?: string;
@@ -75,7 +82,8 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
 
 /** Lit le flux d'événements d'un tour de conversation. */
 export async function chatStream(
-  body: { conversation_id: string; message: string; model: string; deep: boolean },
+  body: { conversation_id: string; message: string; model: string; deep: boolean; artifact_id?: number | null;
+    selection?: any; tool?: string | null; tab_id?: string | null },
   onEvent: (ev: any) => void, signal: AbortSignal,
 ) {
   const r = await fetch("/api/chat", {

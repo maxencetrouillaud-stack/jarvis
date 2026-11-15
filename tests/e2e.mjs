@@ -8,7 +8,7 @@ const { chromium } = require("playwright");
 
 const shots = process.argv[2];
 const py = spawn("python3", ["tests/demo_server.py"], { stdio: ["ignore", "pipe", "inherit"] });
-const port = await new Promise((res) => py.stdout.once("data", (d) => res(String(d).trim())));
+const [port, webUrl] = await new Promise((res) => py.stdout.once("data", (d) => res(String(d).trim().split(/\s+/))));
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: shots ? 2 : 1 });
 const errors = [];
@@ -30,6 +30,7 @@ await page.addInitScript(() => {
 const sharp = require("sharp");
 const shot = async (n) => shots && page.screenshot({ path: `${shots}/${n}.png` });
 const step = (s) => console.log("✓", s);
+const nav = (label) => page.locator(".rail-btn", { has: page.locator("span", { hasText: new RegExp(`^${label}$`) }) });
 
 try {
   await page.goto(`http://127.0.0.1:${port}/`);
@@ -104,7 +105,7 @@ try {
   step("historique rechargé, renommage, recherche dans les conversations");
 
   // --- mémoire : ajouter, modifier, chercher, supprimer
-  await page.getByRole("button", { name: "Mémoire" }).click();
+  await nav("Mémoire").click();
   await page.getByRole("button", { name: "Liste", exact: true }).click();
   await page.locator(".mem", { hasText: "BUT GMP" }).waitFor();
   await page.getByRole("button", { name: "Ajouter" }).click();
@@ -125,12 +126,12 @@ try {
   step("mémoire : ajout, modification, recherche, suppression");
 
   // --- modèles : routage
-  await page.getByRole("button", { name: "Modèles" }).click();
+  await nav("Modèles").click();
   await page.getByText("2 modèles").waitFor();
   await page.getByLabel("Programmation").selectOption("ollama:llama-test:8b");
   await page.waitForTimeout(300);
   await shot("5-modeles");
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await nav("Chat").click();
   await page.getByRole("button", { name: "Nouvelle conversation" }).click();
   await box.fill("Écris un script Python qui dit bonjour");
   await box.press("Enter");
@@ -140,7 +141,7 @@ try {
   step("routage automatique : une demande de code part vers le modèle associé");
 
   // --- réglages et sauvegarde ; tableau de bord
-  await page.getByRole("button", { name: "Réglages" }).click();
+  await nav("Paramètres").click();
   await page.getByLabel("Nom de l'assistant").fill("Friday");
   await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await page.waitForFunction(() => document.title === "Friday");
@@ -153,14 +154,14 @@ try {
   await backups.locator(".table tr").first().getByRole("button", { name: "Restaurer" }).click();
   await page.waitForFunction(() => document.title === "Friday");
   step("réglages enregistrés ; sauvegarde puis restauration");
-  await page.getByRole("button", { name: "Tableau de bord" }).click();
+  await nav("Tableau de bord").click();
   await page.locator(".tile", { hasText: "Conversations" }).getByText("3").waitFor();
   await shot("6-tableau-de-bord");
   step("tableau de bord : chiffres réels");
 
   // --- base de connaissances : import, classement, graphe, réponse sourcée, enrichissement
   const ACIER = "L'acier est un alliage de fer et de carbone. Sa résistance à la traction se mesure par un essai de traction normalisé. Le module de Young de l'acier vaut environ 210 GPa.";
-  await page.getByRole("button", { name: "Connaissances" }).click();
+  await nav("Connaissances").click();
   await page.getByText("La bibliothèque est vide").waitFor();
   await page.getByRole("tab", { name: "Importer" }).click();
   await page.locator('.drop input[type="file"]').setInputFiles({ name: "cours-rdm.txt", mimeType: "text/plain", buffer: Buffer.from(ACIER) });
@@ -186,7 +187,7 @@ try {
   await shot("8-graphe");
   step("fiche document avec source et licence ; graphe extrait du document");
 
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await nav("Chat").click();
   await page.getByRole("button", { name: "Nouvelle conversation" }).click();
   await box.fill("Quel est le module de Young de l'acier ?");
   await box.press("Enter");
@@ -199,7 +200,7 @@ try {
   await page.locator(".passage", { hasText: "210 GPa" }).waitFor();
   step("réponse appuyée sur la base, source citée et cliquable jusqu'au passage");
 
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await nav("Chat").click();
   await box.fill("Comment calculer le flambage d'une poutre comprimée ?");
   await box.press("Enter");
   await page.locator(".msg.assistant").last().locator(".tag", { hasText: "Sans source documentaire" }).waitFor();
@@ -207,7 +208,7 @@ try {
   await offer.getByRole("button", { name: "Lancer une recherche" }).click();
   await offer.getByText(/Recherche n° 1 lancée/).waitFor();
   step("la base ne sait pas : Jarvis propose une recherche, qui ne part qu'au clic");
-  await page.getByRole("button", { name: "Connaissances" }).click();
+  await nav("Connaissances").click();
   await page.getByRole("tab", { name: /À traiter/ }).click();
   await page.locator(".hit-row", { hasText: "flambage d'une poutre" }).first().waitFor();
   await page.getByRole("button", { name: "Chercher de quoi combler les manques" }).click();
@@ -231,7 +232,7 @@ try {
     return r.json();
   }, [method, path, body]);
   const real = await call("GET", "/api/sphere");
-  await page.getByRole("button", { name: "Mémoire" }).click();
+  await nav("Mémoire").click();
   await page.waitForFunction((n) => window.__jarvisSphere && window.__jarvisSphere.count() === n && window.__jarvisSphere.frames() > 40, real.nodes.length);
   assert.equal(real.stats.documents, 3);
   await page.locator(".sphere-stats", { hasText: "3 documents" }).waitFor();
@@ -280,7 +281,7 @@ try {
   step("synchronisation automatique après un ajout ; suppression confirmée depuis la sphère");
 
   // --- centre de connaissances : tableau de bord, export
-  await page.locator(".rail-btn", { hasText: "Connaissances" }).click();
+  await nav("Connaissances").click();
   await page.getByRole("tab", { name: "Tableau de bord" }).click();
   await page.locator(".tile", { hasText: "Documents indexés" }).getByText("3", { exact: true }).waitFor();
   await page.locator(".tile", { hasText: "Souvenirs personnels" }).getByText("1", { exact: true }).waitFor();
@@ -376,7 +377,7 @@ try {
 
   // --- sphère : modules, apparition progressive
   const full = await call("GET", "/api/sphere");
-  await page.locator(".rail-btn", { hasText: "Mémoire" }).click();
+  await nav("Mémoire").click();
   await page.waitForFunction((n) => window.__jarvisSphere && window.__jarvisSphere.count() === n && window.__jarvisSphere.frames() > 40, full.nodes.length);
   assert.ok(full.nodes.some((n) => n.k === "research" && n.m === "recherche"), "la recherche validée n'est pas dans la sphère");
   const modBtn = page.locator(".sphere-left .fam", { hasText: "Recherches du chercheur" });
@@ -397,7 +398,7 @@ try {
   step("sphère : filtre par module, couleurs par module, nouvelle connaissance qui apparaît progressivement");
 
   // --- réponse : modules consultés
-  await page.locator(".rail-btn", { hasText: "Conversation" }).click();
+  await nav("Chat").click();
   await page.getByRole("button", { name: "Nouvelle conversation" }).click();
   await box.fill("Quel est le module de Young de l'acier ?");
   await box.press("Enter");
@@ -439,7 +440,7 @@ try {
   await box.fill("Au fait, je suis passé en deuxième année");
   await box.press("Enter");
   await page.getByText(/mise à jour de souvenir à valider/).waitFor();
-  await page.locator(".rail-btn", { hasText: "Mémoire" }).click();
+  await nav("Mémoire").click();
   await page.getByRole("button", { name: "Liste", exact: true }).click();
   const mprop = page.locator(".proposal");
   await mprop.locator(".old", { hasText: "étudiant en BUT GMP à Limoges" }).waitFor();
@@ -456,16 +457,16 @@ try {
   await page.locator(".filters select[aria-label='Nature']").selectOption("");
   await page.getByRole("button", { name: "Sphère 3D" }).click();
   await page.locator(".sphere-gl").waitFor();
-  await page.getByRole("button", { name: "Tableau de bord" }).click();
+  await nav("Tableau de bord").click();
   await page.getByText("Cerveau central").first().waitFor();
   await page.locator(".bar", { hasText: "Décomposée en étapes" }).waitFor();
   await page.getByText("Habitudes observées").waitFor();
   await shot("23-tableau-cerveau");
   step("mémoire : mise à jour proposée puis acceptée, ancienne version dans l'historique ; tableau de bord du cerveau");
-  await page.locator(".rail-btn", { hasText: "Conversation" }).click();
+  await nav("Chat").click();
 
   // --- mode vocal (reconnaissance et synthèse simulées)
-  await page.locator(".rail-btn", { hasText: "Conversation" }).click();
+  await nav("Chat").click();
   await page.getByRole("button", { name: "Nouvelle conversation" }).click();
   await page.getByRole("button", { name: /Parler à/ }).click();
   await page.locator(".voicebar.v-listening").waitFor();
@@ -506,12 +507,12 @@ try {
   await page.locator(".sphere-gl").waitFor();
   step("voix : lancement d'une application autorisée, refus hors liste, navigation");
 
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await nav("Chat").click();
   await page.getByRole("button", { name: "Arrêter le mode vocal" }).click();
   await page.locator(".voicebar").waitFor({ state: "detached" });
-  await page.getByRole("button", { name: "Réglages" }).click();
+  await nav("Paramètres").click();
   await page.getByText("Mains libres : écouter en permanence le mot-clé").click();
-  await page.getByRole("button", { name: "Conversation" }).click();
+  await nav("Chat").click();
   await page.locator(".voicebar.v-standby").waitFor();
   const before = await page.locator(".msg.user").count();
   await page.evaluate(() => window.__say("il fait beau aujourd'hui je crois"));
@@ -527,10 +528,144 @@ try {
   await page.locator(".voicebar.v-error", { hasText: "Accès au micro refusé" }).waitFor();
   step("mains libres : rien sans le mot-clé, demande prise après le mot-clé ; micro refusé signalé clairement");
 
-  assert.deepEqual(errors.filter((e) => !e.includes("401")), [], "erreurs dans la console");
+  // ===================== 0.7 — espace de travail : artefacts, images, navigateur, projets, missions
+  await page.evaluate(() => window.__voice.cur && window.__voice.cur.onerror && null);
+  await nav("Chat").click();
+  await page.getByRole("button", { name: "Nouvelle conversation" }).click();
+  await box.fill("Crée-moi un outil compteur pour l'atelier");
+  await box.press("Enter");
+  const mb = page.locator(".msg.assistant").last();
+  await mb.locator(".mission-block").waitFor();
+  await mb.locator(".agent", { hasText: "Développeur" }).waitFor();
+  await page.locator(".wpanel iframe").waitFor();
+  const sandbox = () => page.frames().find((f) => f.url().includes("/sandbox/a/"));
+  await page.waitForFunction(() => document.querySelector(".wpanel iframe"));
+  let fr = null;
+  for (let i = 0; i < 50 && !(fr = sandbox()); i++) await page.waitForTimeout(100);
+  await fr.waitForSelector("#plus");
+  await fr.click("#plus"); await fr.click("#plus");
+  assert.equal(await fr.textContent("#v"), "2", "l'artefact ne s'exécute pas réellement");
+  const isolated = await fr.evaluate(async () => {
+    let parentRead = "lu"; try { void window.parent.document.body; } catch { parentRead = "bloqué"; }
+    let net = "envoyé"; try { await fetch("/api/state"); } catch { net = "bloqué"; }
+    return [parentRead, net, String(window.origin)];
+  });
+  assert.deepEqual(isolated, ["bloqué", "bloqué", "null"], "l'artefact n'est pas isolé");
+  await mb.locator(".acard", { hasText: "Compteur d'atelier" }).waitFor();
+  await mb.getByText("Contrôle de l'artefact").waitFor();
+  await shot("21-artefact");
+  step("artefact créé par une mission (développeur puis vérificateur), aperçu réel et isolé dans le panneau de droite");
+
+  await page.locator(".composer-ctx", { hasText: "Compteur d'atelier" }).waitFor();
+  await box.fill("Change le titre en rouge");
+  await box.press("Enter");
+  await page.locator(".wpanel select[aria-label='Version'] option", { hasText: "v2 (actuelle)" }).waitFor({ state: "attached" });
+  for (let i = 0; i < 50; i++) { fr = sandbox(); if (fr && (await fr.textContent("#titre").catch(() => "")) === "Compteur rouge") break; await page.waitForTimeout(100); }
+  assert.equal(await sandbox().textContent("#titre"), "Compteur rouge");
+  step("modification demandée dans la conversation : nouvelle version, aperçu actualisé automatiquement");
+
+  await page.locator(".wpanel").getByRole("button", { name: "Sélectionner un élément" }).click();
+  await sandbox().click("#plus");
+  await page.locator(".sel-chip code", { hasText: "#plus" }).waitFor();
+  await page.locator(".wpanel input[aria-label='Modification demandée']").fill("Rends ce bouton plus grand");
+  await page.locator(".wpanel").getByRole("button", { name: "Modifier" }).last().click();
+  await page.locator(".wpanel select[aria-label='Version'] option", { hasText: "v3 (actuelle)" }).waitFor({ state: "attached" });
+  const sentSel = await call("GET", "/api/missions?limit=1");
+  assert.equal(sentSel[0].plan.steps[0].tool, "artifact.edit");
+  await page.locator(".wpanel").getByRole("button", { name: "Code" }).click();
+  assert.ok((await page.locator(".aview-code textarea").inputValue()).includes("font-size:30px"));
+  await page.locator(".wpanel select[aria-label='Version']").selectOption("1");
+  await page.locator(".notice", { hasText: "Vous regardez la version 1" }).waitFor();
+  await page.getByRole("button", { name: "Revenir à cette version" }).click();
+  await page.locator(".wpanel select[aria-label='Version'] option", { hasText: "v4 (actuelle)" }).waitFor({ state: "attached" });
+  step("sélection d'un élément de l'aperçu puis modification ciblée ; code visible ; retour à une version précédente");
+
+  await page.getByRole("radio", { name: "Image" }).click();
+  await box.fill("une maison moderne au bord d'un lac");
+  await box.press("Enter");
+  const ib = page.locator(".msg.assistant").last();
+  await ib.locator(".itile img").waitFor();
+  await ib.locator(".agent", { hasText: "Concepteur" }).waitFor();
+  await ib.getByRole("button", { name: "Enregistrer" }).click();
+  await page.locator(".toast", { hasText: "Image enregistrée" }).waitFor();
+  await shot("22-image-chat");
+  await box.fill("Jarvis, génère-moi une voiture de sport en 3D.");
+  await box.press("Enter");
+  await page.locator(".msg.assistant").last().locator(".itile img").waitFor();
+  step("images : outil choisi sous la zone de saisie, puis demande ambiguë reconnue par le modèle ; image enregistrée");
+
+  await nav("Images").click();
+  await page.getByRole("button", { name: /Galerie/ }).click();
+  assert.equal(await page.locator(".studio-main .igrid .itile").count(), 1);
+  await page.getByRole("button", { name: "Résultats et récentes" }).click();
+  await page.getByLabel("Description").fill("un logo pour mon projet de treuil");
+  await page.locator(".chip", { hasText: "Logo" }).click();
+  await page.locator(".seg.five button", { hasText: "Paysage" }).click();
+  await page.getByRole("button", { name: "Générer" }).click();
+  await page.locator("h4", { hasText: "Dernière génération" }).waitFor();
+  await shot("23-images");
+  await page.locator(".igrid.big .itile").first().getByRole("button", { name: "Modifier" }).click();
+  await page.getByLabel("Modification", { exact: true }).fill("ajoute un engrenage au centre");
+  await page.getByRole("button", { name: "Appliquer la modification" }).click();
+  await page.locator(".toast", { hasText: "générée" }).last().waitFor();
+  step("génération d'images : format, style, modification d'une image générée, galerie");
+
+  await nav("Navigateur").click();
+  await page.getByLabel("Adresse ou recherche").fill(`${webUrl}/treuil`);
+  await page.getByLabel("Adresse ou recherche").press("Enter");
+  await page.locator(".reader h1", { hasText: "Treuils électriques" }).waitFor();
+  assert.equal(await page.locator(".reader script").count(), 0);
+  await page.locator(".reader td", { hasText: "4 m/min" }).waitFor();
+  await page.locator(".reader a", { hasText: "les règles de levage" }).click();
+  await page.locator(".reader h1", { hasText: "Règles de levage" }).waitFor();
+  await page.getByRole("button", { name: "Précédente" }).click();
+  await page.locator(".reader h1", { hasText: "Treuils électriques" }).waitFor();
+  await page.getByRole("button", { name: "Ajouter aux favoris" }).click();
+  await page.getByRole("button", { name: "Retirer des favoris" }).waitFor();
+  await page.getByRole("button", { name: "Historique" }).click();
+  await page.locator(".bside .bitem", { hasText: "Règles de levage" }).waitFor();
+  await shot("24-navigateur");
+  step("navigateur : page en mode lecture sans scripts, tableau, lien suivi, retour, favori, historique");
+
+  await page.getByRole("button", { name: "Demander à Jarvis sur cette page" }).click();   // la boîte de dialogue est acceptée par le test
+  await page.locator(".msg.user", { hasText: "Titre renommé" }).waitFor();
+  const wb = page.locator(".msg.assistant").last();
+  await wb.locator(".source.web", { hasText: "Treuils électriques" }).waitFor();
+  await wb.getByText("500 kg").waitFor();
+  await wb.locator(".agent", { hasText: "Chercheur" }).waitFor();
+  step("question sur la page ouverte : le chercheur lit l'onglet, réponse avec la source web [W1]");
+
+  await page.locator(".thread-head select[aria-label='Projet']").waitFor();
+  await nav("Projets").click();
+  await page.getByRole("textbox", { name: "Nom", exact: true }).fill("Treuil Huchez");
+  await page.getByRole("textbox", { name: "Objectif", exact: true }).fill("Concevoir le treuil du projet S3");
+  await page.getByRole("button", { name: "Créer" }).click();
+  await page.getByRole("heading", { name: "Treuil Huchez" }).waitFor();
+  await nav("Chat").click();
+  await page.locator(".thread-head select[aria-label='Projet']").selectOption({ label: "Treuil Huchez" });
+  await page.locator(".toast", { hasText: "rattachée au projet" }).waitFor();
+  await nav("Projets").click();
+  await page.locator(".pcard", { hasText: "Treuil Huchez" }).click();
+  await page.getByRole("button", { name: /Conversations/ }).click();
+  await page.locator(".plist .bitem").first().waitFor();
+  await page.getByRole("button", { name: /Recherches et sources/ }).click();
+  await page.locator(".bitem", { hasText: "Treuils électriques" }).waitFor();     // ce que la conversation a produit a rejoint le projet
+  await page.getByRole("button", { name: /Artefacts/ }).last().click();
+  await page.locator(".plist .bitem", { hasText: "Compteur d'atelier" }).waitFor();
+  await page.getByRole("button", { name: /Recherches et sources/ }).click();
+  await shot("25-projet");
+  await nav("Artefacts").click();
+  await page.locator(".aitem", { hasText: "Compteur d'atelier" }).click();
+  await page.locator(".studio-main iframe").waitFor();
+  await shot("26-artefacts");
+  step("projets : création, conversation rattachée, sources retrouvées ; bibliothèque d'artefacts");
+
+  assert.deepEqual(errors.filter((e) => !e.includes("401") && !/Refused to connect|connect-src 'none'/.test(e)), [], "erreurs dans la console");
+  // (les seuls messages filtrés ci-dessus sont ceux du test d'isolement : l'artefact a tenté d'appeler l'API et a été bloqué)
   console.log("\nInterface : tous les parcours passent.");
 } catch (e) {
   console.error("\nÉCHEC :", e.message, "\nconsole:", errors);
+  console.error("dernière réponse :", await page.locator(".msg.assistant").last().innerText().catch(() => "?"));
   if (shots) await page.screenshot({ path: `${shots}/echec.png` });
   process.exitCode = 1;
 } finally {

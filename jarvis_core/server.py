@@ -336,7 +336,9 @@ def make_handler(app: App):
                 last = int((q.get("since") or ["0"])[0])
             except ValueError:
                 last = 0
-            if last > app.bus.last_id:
+            if last < 0:
+                last = app.bus.last_id   # première connexion de l'interface : seulement les événements à venir
+            elif last > app.bus.last_id:
                 last = 0   # Jarvis a redémarré : on repart du début
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")

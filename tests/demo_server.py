@@ -7,14 +7,40 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fakes import Fake, FakeScience, FakeWeb  # noqa: E402
+from fakes import Fake, FakeImages, FakeScience, FakeWeb  # noqa: E402
 from jarvis_core.collect import Wikipedia  # noqa: E402
 from jarvis_core.providers import REGISTRY  # noqa: E402
 from jarvis_core.server import App, serve  # noqa: E402
 
 
+COMPTEUR = """<!doctype html><html lang="fr"><head><title>Compteur</title><style>body{font-family:sans-serif;padding:20px}
+button{font-size:18px;padding:8px 16px}</style></head><body><h1 id="titre">Compteur d'atelier</h1><button id="plus">Ajouter</button>
+<p id="v">0</p><script>let n=0;document.getElementById('plus').onclick=()=>{n++;document.getElementById('v').textContent=n;};</script>
+</body></html>"""
+
+
+def studio_script(s):
+    """Réponses des agents de l'espace de travail (missions, artefacts) pour le test de l'interface."""
+    if "Tu crées un ARTEFACT" in s:
+        return "TITRE: Compteur d'atelier\nTYPE: html\n```html\n" + COMPTEUR + "\n```"
+    if "Tu modifies un artefact" in s:
+        if "plus grand" in s:
+            return "<<<<<<< CHERCHER\nbutton{font-size:18px;padding:8px 16px}\n=======\nbutton{font-size:30px;padding:14px 26px}\n>>>>>>> REMPLACER"
+        return ('<<<<<<< CHERCHER\n<h1 id="titre">Compteur d\'atelier</h1>\n=======\n'
+                '<h1 id="titre" style="color:#e11">Compteur rouge</h1>\n>>>>>>> REMPLACER')
+    if "Classe la demande de l'utilisateur" in s:
+        return '{"image": true, "modifier_image": false, "artefact": false, "modifier_artefact": false, "web": false}'
+    if "Tes agents viennent d'exécuter une mission" in s:
+        return ("D'après la page consultée, un **treuil électrique de 500 kg** convient à la plupart des ateliers [W1]. "
+                "Cette information ne vient que d'une seule source.")
+    return None
+
+
 def script(body):
     s = json.dumps(body, ensure_ascii=False)
+    st = studio_script(s)
+    if st is not None:
+        return st
     # --- cerveau central : tâche complexe découpée en étapes
     if "planificateur d'un assistant" in s:
         return json.dumps({"objectif": "Organiser les révisions du partiel de RDM", "etapes": [
@@ -118,9 +144,22 @@ def main():
         "anthropic": {"base_url": fa.url}, "ollama": {"base_url": fo.url},
         "openai": {"enabled": False}, "gemini": {"enabled": False}}})
     app.settings.update({"apps": [{"name": "Calculatrice", "target": "calc-test"}]})
+    # espace de travail : faux générateur d'images (format Gemini) et pages web locales pour le navigateur
+    gi = FakeImages()
+    app.settings.update({"providers": {"gemini": {"base_url": gi.url, "enabled": False}}, "browser_engine": "lecture",
+                         "mission_runtime_check": False})
+    app.keys.set("gemini", "cle-test")
+    web.pages["/treuil"] = ("text/html; charset=utf-8", (
+        "<html><head><title>Treuils électriques</title><script>alert('page')</script></head><body><nav>Menu</nav><main>"
+        "<h1>Choisir un treuil</h1><p>Un treuil électrique de 500 kg convient à la plupart des ateliers. Le couple moteur "
+        "dépend du rayon du tambour et de la charge levée, ainsi que du rendement du réducteur choisi.</p>"
+        "<p>Voir aussi <a href='/levage'>les règles de levage</a>.</p>"
+        "<table><tr><th>Charge</th><th>Vitesse</th></tr><tr><td>500 kg</td><td>4 m/min</td></tr></table></main></body></html>").encode())
+    web.pages["/levage"] = ("text/html", "<html><head><title>Règles de levage</title></head><body><p>Toujours vérifier la charge maximale d'utilisation avant de lever une charge, et ne jamais passer sous la charge.</p></body></html>".encode())
+    app.demo_web = web.url
     app.app_runner = lambda target: None   # aucun programme n'est réellement lancé pendant le test
     httpd = serve(app, 0)
-    print(httpd.server_address[1], flush=True)
+    print(httpd.server_address[1], app.demo_web, flush=True)   # port de Jarvis, puis adresse des pages de test
     httpd.serve_forever()
 
 

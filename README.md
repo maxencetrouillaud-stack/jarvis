@@ -60,7 +60,8 @@ Vos données sont dans `%APPDATA%\Jarvis` (base `jarvis.db`, réglages, clés, s
 - Rappel des passages d'anciennes conversations en rapport avec la question ; recherche dans les conversations.
 
 **Interface**
-- Conversation, Mémoire, Modèles, Tableau de bord, Réglages. Indicateur d'activité relié à l'état réel du moteur.
+- Chat, Artefacts, Navigateur, Images, Projets, Mémoire, Connaissances, Modèles, Tableau de bord, Paramètres.
+  Indicateur d'activité relié à l'état réel du moteur.
 - Interruption d'une réponse en cours (le texte déjà reçu est conservé).
 - Chaque réponse indique le modèle utilisé, le type de tâche, les souvenirs transmis et le résultat de la vérification.
 
@@ -71,6 +72,67 @@ Vos données sont dans `%APPDATA%\Jarvis` (base `jarvis.db`, réglages, clés, s
 - Le contenu de la mémoire et des documents importés est transmis au modèle comme des données, avec la consigne
   de ne pas en suivre les instructions. C'est une atténuation, pas une garantie.
 - Sauvegarde automatique quotidienne (.zip), sauvegarde manuelle, restauration.
+
+## Espace de travail : Artefacts, Navigateur, Images, missions multi-outils (version 0.7)
+
+Une seule instruction suffit : le cerveau central choisit les outils, les confie à des agents spécialisés, les enchaîne en
+transmettant les résultats d'un agent au suivant, puis assemble tout dans la conversation et le projet.
+
+**Architecture** (modules indépendants, reliés par des interfaces communes) :
+- `workspace.py` — **socle commun** : projets (un seul système : les projets nommés dans la mémoire en font partie), ressources
+  (images, fichiers, sources, téléchargements) rangées dans `files/` et dédupliquées, journal des agents, **bus d'événements**
+  partagé (missions, navigateur, artefacts, images) diffusé à l'interface en direct (`/api/events`).
+- `tools.py` — **registre des outils** : même interface pour tous (contexte de mission, résultats standard : texte, sources,
+  images, artefacts), avec durée maximale, nouvel essai borné, **autorisation obligatoire** pour les actions sensibles, journal.
+- `missions.py` — **orchestrateur multi-outils** : reconnaissance de la demande (règles, puis le modèle utilitaire seulement si
+  c'est ambigu), plan (modèle-type, ou plan établi par le modèle pour les missions qui combinent plusieurs outils, contrôlé :
+  outils existants, outils nécessaires présents, contrôle après chaque création), exécution en arrière-plan, **reprise à
+  l'étape en échec**, arrêt, synthèse finale avec les sources. Agents : chercheur, concepteur, développeur, ingénieur, vérificateur.
+- `artifacts.py`, `browser.py`, `images.py` — les trois modules, utilisables seuls (onglets dédiés) ou par les agents.
+
+**Artefacts** : applications HTML/CSS/JavaScript, composants React, schémas SVG, diagrammes Mermaid, documents et présentations.
+- Affichés à droite de la conversation (ou dans l'onglet Artefacts) : **Aperçu réel** / **Code**, versions avec retour arrière,
+  **sélection d'un élément** de l'aperçu pour le faire modifier, **Modifier** en discutant, export HTML autonome ou archive,
+  plein écran, rangement par projet. Toute modification crée une version et l'aperçu se met à jour seul.
+- **Isolation** : l'aperçu est servi avec une politique de sécurité « sandbox » (origine opaque) : le code généré ne peut ni lire
+  l'interface de Jarvis, ni appeler son API, ni envoyer de données (aucune connexion réseau autorisée). Seules des bibliothèques
+  de cdnjs, jsDelivr et unpkg peuvent être chargées (il faut donc Internet pour React, Chart.js, three.js…).
+- Le **vérificateur** contrôle le code (images manquantes, ressources interdites, inachevé) et, si le moteur Chromium est
+  installé, **exécute l'artefact dans un navigateur isolé** pour relever les erreurs JavaScript, puis fait corriger (borné).
+
+**Navigateur** : onglets, adresse ou recherche, précédent/suivant/actualiser/accueil, favoris, historique, téléchargements,
+plein écran, « Demander à Jarvis » sur la page ouverte.
+- **Mode lecture** (sans installation) : la page est téléchargée par Jarvis et affichée nettoyée (aucun script de la page ne
+  s'exécute) ; les images passent par un relais signé. Ne convient pas aux sites entièrement construits en JavaScript ni aux pages
+  qui demandent une connexion.
+- **Mode Chromium** (Paramètres › Installer le moteur Chromium : `pip install playwright`, puis Microsoft Edge du PC est piloté ;
+  sinon Chromium est téléchargé) : vrai navigateur sans fenêtre, affiché en direct dans Jarvis, vos clics, défilements et frappes
+  lui sont transmis. Vous pouvez vous connecter vous-même à un site ; Jarvis ne saisit jamais de mot de passe.
+- **Agent web** : recherche, ouverture des pages dans des onglets « IA » visibles en temps réel, **citations vérifiées mot pour
+  mot dans les pages**, comparaison (« confirmée » exige deux sources différentes, contradictions signalées), réponse avec les
+  sources [W1]… Il respecte robots.txt, ne remplit aucun formulaire, ne se connecte nulle part, et ne télécharge rien sans votre
+  accord (la mission attend votre clic). Les fichiers exécutables ne sont jamais téléchargés.
+- **Recherche web générale : il faut une clé Brave Search** (offre gratuite, à saisir dans Connaissances › Chercheur). Sans elle,
+  les recherches se limitent à Wikipédia et aux sources scientifiques (HAL, OpenAlex, arXiv) ; une adresse précise se lit toujours.
+
+**Génération d'images** : description en français, images de référence, format (carré, portrait, paysage, vertical, proportions
+au choix parmi celles du modèle), style, taille 1K/2K/4K, 1 à 4 variantes, modification d'une image (« ajoute… », « retire… »,
+« passe en aquarelle »), version haute résolution régénérée par le modèle, galerie (seules les images enregistrées sont gardées ;
+les autres sont effacées après le délai réglé), utilisation dans un artefact (`jarvis-image:N`).
+- **Fournisseur : Google Gemini** (modèles « Nano Banana », API generateContent), avec votre clé Gemini de l'onglet Modèles.
+  **La génération d'images n'est pas incluse dans l'offre gratuite de l'API Gemini : la facturation doit être activée** sur le
+  projet Google de la clé. Ajouter un autre fournisseur = une classe dans `jarvis_core/images.py`.
+- Dans la conversation, « génère-moi… », « crée un logo… », « transforme cette pièce en rendu réaliste », « modifie cette image… »
+  déclenchent le générateur sans changer d'onglet.
+
+**Projets** : objectif, notes, état, missions avec le détail des étapes et des agents, conversations, recherches et sources (envoi
+d'une source à la bibliothèque technique sur votre clic), images, fichiers, artefacts, souvenirs du projet, export en archive.
+Rattacher une conversation à un projet y range aussi ce qu'elle a déjà produit. Les sauvegardes
+contiennent les artefacts (dans la base) et les images et fichiers gardés ; les images temporaires n'y sont pas. Rien n'entre dans la mémoire permanente sans
+passer par les règles habituelles de la mémoire.
+
+**Paramètres** : choix automatique des outils, recherche web automatique, **validation de chaque plan avant exécution**, contrôle
+à l'exécution, limites (étapes, durée, pages lues, corrections), moteurs du navigateur, modèle et taille des images, conservation.
 
 ## Cerveau central et mémoire intelligente (version 0.6)
 
@@ -295,7 +357,7 @@ pour tous les nœuds, un pour tous les liens.
 
 ## Comment c'est testé — et ce qui ne l'est pas
 
-- `python -m unittest discover -s tests` : 128 tests du moteur (dont 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
+- `python -m unittest discover -s tests` : 155 tests du moteur (dont 27 pour l'espace de travail de la 0.7 et 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
   extraction de documents, base de connaissances, collecte, réponses sourcées, migration, sphère, lancement d'applications,
   et les 4 modules de la 0.4 : relevé de formules, versions, dossier surveillé, index approché, chercheur, validation, export).
 - `node tests/e2e.mjs` : parcours complet de l'interface dans un vrai navigateur (demande `npm install` et Playwright).
@@ -315,21 +377,29 @@ pour tous les nœuds, un pour tous les liens.
   reconnaissance et la synthèse y sont simulées. La logique (fin de phrase, mot-clé, interruption, commandes) est testée ;
   la qualité d'écoute réelle, l'écho et les voix ne le sont pas.
 - Le lancement d'applications est testé avec un lanceur factice : aucun programme Windows n'a réellement été lancé.
+- **Espace de travail (0.7)** : missions, passage des résultats entre agents, autorisation, reprise, isolation des artefacts,
+  mode lecture, robots.txt, téléchargements refusés, recherche Brave et images testés contre des faux serveurs ; le **moteur
+  Chromium et le contrôle d'exécution des artefacts ont tourné pour de vrai** (Chromium de Playwright, sous Linux), sur des pages
+  locales. **Aucune image n'a été générée par le vrai Gemini** : le format des requêtes suit la documentation de Google relue
+  en novembre 2026 (avec repli automatique sur l'ancien format de configuration) ; le premier essai avec votre clé dira s'il
+  répond. Le pilotage de Microsoft Edge sous Windows et l'installation de Playwright depuis Jarvis n'ont pas été vus sur Windows.
 
 ## Ce qui n'existe pas encore
 
 Rien de ceci n'est présent dans l'interface, pas même sous forme de bouton :
-vérification des faits et des calculs, niveaux de certitude, série de tests de qualité (phase 2), gestionnaire de missions
-et équipe d'agents (phase 3), choix automatique du modèle selon le coût et suivi des dépenses (phase 4), contrôle du PC et outils — recherche web, fichiers, exécution de code (étape 4),
-navigation libre sur Internet (le chercheur n'interroge que les sources listées plus haut), base PostgreSQL / pgvector
+vérification des faits et des calculs, niveaux de certitude, série de tests de qualité (phase 2), tâches planifiées et
+agents permanents (phase 3 : les missions de la 0.7 s'exécutent à la demande), choix automatique du modèle selon le coût et
+suivi des dépenses (phase 4), contrôle du PC (fichiers, exécution de code hors artefacts), remplissage de formulaires ou achats
+par l'agent web (volontairement absents), fournisseurs d'images autres que Gemini, base PostgreSQL / pgvector
 (la base reste SQLite, sans installation), plugins, installateur `.exe`, démarrage automatique, mises à jour automatiques, mot de passe à l'ouverture.
-L'analyse d'images n'est pas gérée.
+L'analyse d'images (décrire une photo, lire un PDF scanné) n'est pas gérée : les images servent de référence au générateur.
 
 ## Organisation
 
 ```
 jarvis_core/   moteur Python (providers, brain, orchestrator, memory, knowledge, library, vectors, hub, research, extract, collect,
-               kb_api, sphere, keystore, backup, updater, server)
+               kb_api, sphere, keystore, backup, updater, server ; 0.7 : workspace, tools, missions, artifacts, browser,
+               images, studio_api)
 install.py     installation comme application (raccourcis, désinstallation) ; install.ps1 : installation en une commande
 tools/        publish.py : prépare manifest.json pour publier une version
 ui/            interface React + TypeScript (sources)

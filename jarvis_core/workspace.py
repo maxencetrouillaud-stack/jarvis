@@ -267,6 +267,9 @@ class Workspace:
         if pid is not None and not self.project(pid):
             raise KeyError("Projet introuvable")
         self._x("UPDATE conversations SET project_id=? WHERE id=?", (pid, cid))
+        if pid is not None:   # ce que la conversation a déjà produit rejoint le projet (sans toucher au reste)
+            for table in ("artifacts", "resources", "missions"):
+                self._x(f"UPDATE {table} SET project_id=? WHERE conv_id=? AND project_id IS NULL", (pid, cid))
         self.touch_project(pid)
 
     def conversation_project(self, cid):

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { UpdateSettings } from "./update";
 import { api, AppState, Backup, fmtBytes, fmtDate, Memory, Provider, Settings } from "./api";
+import { WorkspaceCard, WorkspaceSettings } from "./workspace_settings";
 import { Icon, ModelSelect, Orb, Phase, PHASE_LABEL, Toggle } from "./common";
 import { frenchVoices, voiceSupport } from "./voice";
 
@@ -443,6 +444,7 @@ export function DashboardView({ state, active, refreshState, phase }: P & { phas
         </div>
       </div>
       <BrainCard active={active} />
+      <WorkspaceCard state={state} />
       <div className="card"><h3>Où sont vos données</h3>
         <p className="muted small">Tout est enregistré dans ce dossier de votre PC : <code>{state.data_dir}</code></p>
         <p className="muted small">Clés API : {state.key_storage === "dpapi"
@@ -475,7 +477,7 @@ export function SettingsView({ state, setState, toast, active }: P) {
 
   return (
     <div className="panel">
-      <header className="panel-head"><div><h2>Réglages</h2><p className="muted">Identité, comportement et sauvegardes.</p></div></header>
+      <header className="panel-head"><div><h2>Paramètres</h2><p className="muted">Identité, comportement, outils et sauvegardes.</p></div></header>
 
       <div className="card">
         <h3>Identité et personnalité</h3>
@@ -544,6 +546,7 @@ export function SettingsView({ state, setState, toast, active }: P) {
           hint="Transmet au modèle un résumé chiffré de vos habitudes (heures, types de demandes), calculé sur vos messages, à partir de 20 messages." onChange={(v) => patch({ habits_in_context: v })} />
       </div>
 
+      <WorkspaceSettings state={state} patch={patch} toast={toast} active={active} />
       <UpdateSettings state={state} patch={patch} toast={toast} />
       <VoiceSettings state={state} patch={patch} toast={toast} />
       <AppsSettings state={state} patch={patch} toast={toast} active={active} />

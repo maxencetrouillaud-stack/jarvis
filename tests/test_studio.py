@@ -97,6 +97,10 @@ class Foundation(Base):
         self.assertEqual(s1["id"], s2["id"])
         d = ws.project_detail(pid)
         self.assertEqual((d["counts"]["images"], d["counts"]["sources"], d["counts"]["memories"]), (1, 1, 1))
+        c = app.store.create_conversation()
+        a = app.artifacts.create("Plan", "markdown", "# Plan du treuil", conv_id=c["id"])
+        ws.set_conversation_project(c["id"], pid)      # ce que la conversation a produit rejoint le projet
+        self.assertEqual(app.artifacts.get(a["id"])["project_id"], pid)
         app.close()
 
     def test_temporary_images_are_purged_unless_used(self):
@@ -111,6 +115,20 @@ class Foundation(Base):
         self.assertIsNone(ws.resource(gone["id"]))
         self.assertIsNotNone(ws.resource(keep["id"]))
         self.assertIsNotNone(ws.resource(saved["id"]))
+        app.close()
+
+    def test_backup_keeps_saved_creations(self):
+        import zipfile
+        app = studio_app(self.tmp)
+        kept = app.ws.add_file("image", png(), "image/png", "gardée", saved=True)
+        app.ws.add_file("image", png((1, 1, 1)), "image/png", "temporaire")
+        name = app.backups.create("manuel")
+        files = [n for n in zipfile.ZipFile(app.home / "backups" / name).namelist() if n.startswith("files/")]
+        self.assertEqual(len(files), 1)                       # l'image temporaire n'est pas sauvegardée
+        p, _ = app.ws.resource_path(kept["id"])
+        p.unlink()
+        app.backups.restore(name)
+        self.assertIsNotNone(app.ws.resource_path(kept["id"])[0])
         app.close()
 
     def test_registry_limits_retries_and_approval(self):

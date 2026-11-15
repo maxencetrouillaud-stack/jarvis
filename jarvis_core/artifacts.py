@@ -592,7 +592,8 @@ class Artifacts:
             raise KeyError("Artefact introuvable")
         known = [i for i in a["images"] if self.ws.resource(i)]
         issues = static_check(a["kind"], a["content"], known)
-        rt = {"checked": False, "errors": [], "note": "non demandé"}
+        rt = {"checked": False, "errors": [], "note": "exécution désactivée dans les paramètres" if not runtime
+              else "exécution non tentée : le code contient déjà des erreurs"}
         if runtime and not any(i["level"] == "erreur" for i in issues):
             doc, _ = self.render(aid, helper=False)
             rt = runtime_check(doc)

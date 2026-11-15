@@ -7,14 +7,22 @@ import { KnowledgeView } from "./knowledge";
 import { DashboardView, MemoryView, ModelsView, SettingsView, Setup } from "./panels";
 import { UpdateBanner } from "./update";
 import { SphereView } from "./sphere";
+import { ArtifactsView } from "./artifacts";
+import { BrowserView } from "./browser";
+import { ImagesView } from "./images";
+import { ProjectsView } from "./projects";
 
 const VIEWS = [
-  { id: "chat", label: "Conversation", icon: "chat" },
-  { id: "kb", label: "Connaissances", icon: "book" },
+  { id: "chat", label: "Chat", icon: "chat" },
+  { id: "artifacts", label: "Artefacts", icon: "artifact" },
+  { id: "browser", label: "Navigateur", icon: "globe" },
+  { id: "images", label: "Images", icon: "image" },
+  { id: "projects", label: "Projets", icon: "folder" },
   { id: "memory", label: "Mémoire", icon: "memory" },
+  { id: "kb", label: "Connaissances", icon: "book" },
   { id: "models", label: "Modèles", icon: "models" },
   { id: "dash", label: "Tableau de bord", icon: "dash" },
-  { id: "settings", label: "Réglages", icon: "settings" },
+  { id: "settings", label: "Paramètres", icon: "settings" },
 ];
 
 /** Recherche globale : base de connaissances, mémoire personnelle et conversations. */
@@ -67,7 +75,10 @@ function App() {
   const [setup, setSetup] = useState(false);
   const [jump, setJump] = useState<{ id: string; n: number } | null>(null);
   const [focusDoc, setFocusDoc] = useState<{ id: number; n: number } | null>(null);
-  const [ask, setAsk] = useState<{ text: string; n: number } | null>(null);
+  const [ask, setAsk] = useState<{ text: string; n: number; tool?: string; tab_id?: string } | null>(null);
+  const [openArt, setOpenArt] = useState<{ id: number; n: number } | null>(null);
+  const [libArt, setLibArt] = useState<{ id: number; n: number } | null>(null);
+  const [openUrl, setOpenUrl] = useState<{ url: string; n: number } | null>(null);
   const [memMode, setMemMode] = useState<{ list: boolean; add?: boolean; editId?: number; n: number }>({ list: false, n: 0 });
   const [kbTab, setKbTab] = useState<{ tab: string; n: number } | null>(null);
   const { push, view: toasts } = useToasts();
@@ -96,6 +107,10 @@ function App() {
   if (!state) return <div className="boot"><Orb phase="thinking" size={110} /></div>;
 
   const goDoc = (id: number) => { setFocusDoc({ id, n: Date.now() }); setView("kb"); };
+  const askJarvis = (text: string, tool?: string, tab_id?: string) => { setAsk({ text, n: Date.now(), tool, tab_id }); setView("chat"); };
+  const goUrl = (url: string) => { setOpenUrl({ url, n: Date.now() }); setView("browser"); };
+  const goConv = (id: string) => { setJump({ id, n: Date.now() }); setView("chat"); };
+  const goArtifact = (id: number) => { setLibArt({ id, n: Date.now() }); setView("artifacts"); };
   const common = { state, setState, toast: push, refreshState };
   return (
     <div className="shell">
@@ -113,7 +128,14 @@ function App() {
       <main className="stage">
         <UpdateBanner state={state} toast={push} />
         <GlobalSearch onDoc={goDoc} onMemory={() => setView("memory")} onConv={(id) => { setJump({ id, n: Date.now() }); setView("chat"); }} />
-        <div hidden={view !== "chat"} className="view"><ChatView {...common} active={view === "chat"} phase={phase} setPhase={setPhase} goModels={() => setView("models")} jump={jump} goDoc={goDoc} go={setView} ask={ask} goResearch={() => { setKbTab({ tab: "research", n: Date.now() }); setView("kb"); }} /></div>
+        <div hidden={view !== "chat"} className="view"><ChatView {...common} active={view === "chat"} phase={phase} setPhase={setPhase} goModels={() => setView("models")} jump={jump} goDoc={goDoc} go={setView} ask={ask} goResearch={() => { setKbTab({ tab: "research", n: Date.now() }); setView("kb"); }}
+          openArtifact={openArt} openUrl={goUrl} /></div>
+        {view === "artifacts" && <div className="view"><ArtifactsView toast={push} active openId={libArt} askJarvis={(t, tool) => askJarvis(t, tool)} /></div>}
+        {view === "browser" && <div className="view"><BrowserView toast={push} active openUrl={openUrl} goSettings={() => setView("settings")}
+          askJarvis={(t, tab) => askJarvis(t, "page", tab)} /></div>}
+        {view === "images" && <div className="view"><ImagesView toast={push} active goModels={() => setView("models")} askJarvis={(t) => askJarvis(t)} /></div>}
+        {view === "projects" && <div className="view scroll"><ProjectsView toast={push} active openConv={goConv} openUrl={goUrl}
+          openArtifact={goArtifact} /></div>}
         {view === "kb" && <div className="view scroll"><KnowledgeView {...common} focusDoc={focusDoc} openTab={kbTab}
           toSphere={() => { setMemMode({ list: false, n: Date.now() }); setView("memory"); }} goModels={() => setView("models")} /></div>}
         {view === "memory" && (memMode.list

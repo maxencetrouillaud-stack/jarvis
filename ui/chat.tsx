@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, AppState, chatStream, Conversation, fmtDate, Message, shortModel } from "./api";
+import { api, AppState, chatStream, Conversation, fmtDate, Message, MissionStep, shortModel } from "./api";
+import { ArtifactViewer, Selection } from "./artifacts";
 import { Icon, Markdown, ModelSelect, Orb, Phase } from "./common";
+import { Artifact, ImageTile, MissionSteps, ProjectSelect, Resource, useEvents, useProjects, useResources, WebSources } from "./studio";
 import { norm, SentenceStream, Voice, voiceSupport, VState } from "./voice";
 
 const NAV: [string, string, string][] = [["memoire", "memory", "la mémoire"], ["connaissances", "kb", "les connaissances"], ["reglages", "settings", "les réglages"],
@@ -12,10 +14,15 @@ interface Props {
   state: AppState; active: boolean; setPhase: (p: Phase) => void; phase: Phase;
   toast: (t: string, kind?: string) => void; refreshState: () => void; goModels: () => void;
   jump: { id: string; n: number } | null; goDoc: (id: number) => void;
-  setState: (s: AppState) => void; go: (view: string) => void; ask: { text: string; n: number } | null; goResearch: () => void;
+  setState: (s: AppState) => void; go: (view: string) => void; goResearch: () => void;
+  ask: { text: string; n: number; tool?: string; tab_id?: string } | null;
+  openArtifact: { id: number; n: number } | null; openUrl: (u: string) => void;
 }
+type PanelItem = { kind: "artifact" | "image"; id: number; title: string };
+const TOOLS: [string, string, string][] = [["", "Auto", "Jarvis choisit seul les outils"], ["image", "Image", "Générer ou modifier une image"],
+  ["artifact", "Artefact", "Créer une application, un outil, un schéma, une présentation…"], ["web", "Web", "Chercher et vérifier sur Internet"]];
 
-export function ChatView({ state, active, setPhase, phase, toast, refreshState, goModels, jump, goDoc, setState, go, ask, goResearch }: Props) {
+export function ChatView({ state, active, setPhase, phase, toast, refreshState, goModels, jump, goDoc, setState, go, ask, goResearch, openArtifact, openUrl }: Props) {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -35,6 +42,29 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
   const [bars, setBars] = useState<number[]>([]);
   const voice = useRef<Voice | null>(null);
   const live = useRef<any>({});
+  const [panel, setPanel] = useState<{ open: boolean; items: PanelItem[]; active: number }>({ open: false, items: [], active: 0 });
+  const [tool, setTool] = useState("");
+  const [convProject, setConvProject] = useState<number | null>(null);
+  const [wsCount, setWsCount] = useState(0);
+  const [projects] = useProjects(active);
+  const activeItem = panel.open ? panel.items[panel.active] : undefined;
+  const openItem = (it: PanelItem) => setPanel((p) => {
+    const i = p.items.findIndex((x) => x.kind === it.kind && x.id === it.id);
+    if (i >= 0) return { open: true, items: p.items.map((x, k) => (k === i ? { ...x, title: it.title || x.title } : x)), active: i };
+    return { open: true, items: [...p.items, it].slice(-8), active: Math.min(p.items.length, 7) };
+  });
+  const closeItem = (i: number) => setPanel((p) => {
+    const items = p.items.filter((_, k) => k !== i);
+    return { open: items.length > 0 && p.open, items, active: Math.max(0, Math.min(p.active, items.length - 1)) };
+  });
+  const loadWorkspace = async (cid: string) => {
+    try {
+      const w = await api("GET", `/api/conversations/${cid}/workspace`);
+      setConvProject(w.project_id); setWsCount(w.artifacts.length + w.images.length);
+      return w;
+    } catch { return null; }
+  };
+  useEffect(() => { if (openArtifact) api<Artifact>("GET", `/api/artifacts/${openArtifact.id}`).then((a) => openItem({ kind: "artifact", id: a.id, title: a.title })).catch((e) => toast(e.message, "error")); }, [openArtifact]);
   const S = state.settings as any;
   const hasModels = state.providers.some((p) => p.models.length);
   const name = state.settings.assistant_name || "Jarvis";
@@ -53,6 +83,8 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
       const c = await api<Conversation>("GET", `/api/conversations/${id}`);
       setCurrent(id);
       setMessages(c.messages || []);
+      setPanel({ open: false, items: [], active: 0 });
+      loadWorkspace(id);
       stick.current = true;
       setHits(null);
       setQuery("");
@@ -61,7 +93,7 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
 
   useEffect(() => { if (jump) open(jump.id); }, [jump]);
 
-  const fresh = () => { if (!busy) { setCurrent(null); setMessages([]); setHits(null); setQuery(""); } };
+  const fresh = () => { if (!busy) { setCurrent(null); setMessages([]); setHits(null); setQuery(""); setConvProject(null); setWsCount(0); setPanel({ open: false, items: [], active: 0 }); } };
 
   const rename = async (c: Conversation) => {
     const title = window.prompt("Nouveau titre de la conversation", c.title);
@@ -88,7 +120,7 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
   const patchLast = (fn: (m: Message) => Message) =>
     setMessages((ms) => ms.map((m, i) => (i === ms.length - 1 ? fn(m) : m)));
 
-  const send = async (override?: string, viaVoice = false) => {
+  const send = async (override?: string, viaVoice = false, extra: { tool?: string; tab_id?: string; selection?: Selection | null; artifact_id?: number } = {}) => {
     const text = (override ?? input).trim();
     const v = viaVoice ? voice.current : null;
     if (!text || busy) { v?.endReply(); return; }
@@ -108,6 +140,7 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
       if (!cid) {
         cid = (await api<Conversation>("POST", "/api/conversations", {})).id;
         setCurrent(cid);
+        if (convProject) await api("POST", `/api/conversations/${cid}/project`, { project_id: convProject }).catch(() => {});
       }
     } catch (e: any) { toast(e.message, "error"); setBusy(false); setInput(text); return; }
 
@@ -118,7 +151,11 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
     abort.current = ctl;
     let finished = false; // la réponse est terminée ; le flux peut rester ouvert pour la mise en mémoire
     try {
-      await chatStream({ conversation_id: cid!, message: text, model: model || "auto", deep }, (ev) => {
+      const artifactId = extra.artifact_id ?? (activeItem?.kind === "artifact" ? activeItem.id : null);
+      const useTool = extra.tool ?? (tool || null);
+      if (override === undefined && tool) setTool("");
+      await chatStream({ conversation_id: cid!, message: text, model: model || "auto", deep, artifact_id: artifactId,
+        selection: extra.selection || null, tool: useTool, tab_id: extra.tab_id || null }, (ev) => {
         if (ev.type === "analysis") {
           const { type, ...an } = ev;
           patchLast((m) => ({ ...m, status: an.strategy === "décomposée" ? "Tâche complexe : découpage en étapes…" : m.status,
@@ -149,8 +186,29 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
           patchLast((m) => ({ ...m, content: m.content + ev.text, status: "" }));
         } else if (ev.type === "verify") {
           patchLast((m) => ({ ...m, meta: { ...m.meta, verify: ev } }));
+        } else if (ev.type === "mission") {
+          setPhase("thinking");
+          if (ev.kind === "artifact") openItem({ kind: "artifact", id: ev.artifact_id, title: ev.title });
+          patchLast((m) => {
+            const lv = m.meta.live || { steps: [] as MissionStep[] };
+            let st = m.status;
+            let nl: any = { ...lv };
+            if (ev.kind === "plan") { nl = { ...lv, objective: ev.objective, planner: ev.planner, steps: ev.steps.map((x: any) => ({ ...x, state: "en attente" })) }; st = "Mission planifiée…"; }
+            if (ev.kind === "step") {
+              nl.steps = lv.steps.map((x) => (x.n === ev.n ? { ...x, state: ev.state, summary: ev.summary, error: ev.error } : x));
+              if (ev.state === "en cours") st = `${ev.agent_label} : ${ev.label}…`;
+            }
+            if (ev.kind === "approval") { nl.approval = { n: ev.n, action: ev.action, detail: ev.detail }; nl.steps = lv.steps.map((x) => (x.n === ev.n ? { ...x, state: "autorisation" } : x)); st = "En attente de votre autorisation"; }
+            if (ev.kind === "decision") nl.approval = null;
+            if (ev.kind === "progress") st = ev.text;
+            if (ev.kind === "status") st = ev.text;
+            if (ev.kind === "done") { nl.status = ev.status; st = ""; }
+            return { ...m, status: st, meta: { ...m.meta, mission_id: ev.mission_id, live: nl } };
+          });
         } else if (ev.type === "done") {
-          patchLast((m) => ({ ...m, pending: false, status: "", id: ev.message_id, model: ev.model }));
+          patchLast((m) => ({ ...m, pending: false, status: "", id: ev.message_id, model: ev.model,
+            content: m.content || ev.content || "", meta: ev.meta ? { ...m.meta, ...ev.meta } : m.meta }));
+          if (ev.meta?.artifacts?.length || ev.meta?.images?.length) loadWorkspace(cid!);
           finished = true;
           abort.current = null;
           if (talk) sentences.flush().forEach((s) => v!.speak(s));
@@ -227,7 +285,13 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
   }, [vstate]);
   useEffect(() => { if (S.voice_handsfree && voiceSupport().stt && vstate === "off") voice.current!.start(false); }, [S.voice_handsfree]);
   useEffect(() => () => voice.current?.stop(), []);
-  useEffect(() => { if (ask) send(ask.text); }, [ask]);
+  useEffect(() => { if (ask) send(ask.text, false, { tool: ask.tool, tab_id: ask.tab_id }); }, [ask]);
+  useEvents((e) => {   // mission terminée hors du flux (fenêtre rechargée, mission lancée ailleurs) : on recharge le fil
+    if (e.topic !== "mission" || e.kind !== "done" || !e.conv_id || e.conv_id !== current || busy) return;
+    if (e.message_id && messages.some((m) => m.id === e.message_id)) return;   // déjà affichée par le flux
+    api<Conversation>("GET", `/api/conversations/${e.conv_id}`).then((c) => { if (!live.current.busy) setMessages(c.messages || []); }).catch(() => {});
+    loadWorkspace(e.conv_id);
+  });
   const micClick = () => {
     const v = voice.current!;
     if (vstate === "off" || vstate === "error" || vstate === "standby") v.start(true);
@@ -243,7 +307,7 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
   };
 
   return (
-    <div className="chat">
+    <div className={`chat ${panel.open && activeItem ? "with-panel" : ""}`}>
       <aside className="convs">
         <button className="btn primary wide" onClick={fresh} disabled={busy}><Icon name="plus" /> Nouvelle conversation</button>
         <div className="field-icon">
@@ -278,6 +342,25 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
       </aside>
 
       <section className="thread">
+        {current && (
+          <div className="thread-head">
+            <span className="conv-name">{convs.find((c) => c.id === current)?.title || "Conversation"}</span>
+            <ProjectSelect projects={projects} value={convProject} empty="Sans projet" onChange={async (pid) => {
+              try { await api("POST", `/api/conversations/${current}/project`, { project_id: pid }); setConvProject(pid); toast(pid ? "Conversation rattachée au projet." : "Conversation détachée du projet."); }
+              catch (e: any) { toast(e.message, "error"); }
+            }} />
+            <span className="grow" />
+            <button className={`btn ${panel.open ? "on" : ""}`} onClick={async () => {
+              if (panel.open) { setPanel({ ...panel, open: false }); return; }
+              if (panel.items.length) { setPanel({ ...panel, open: true }); return; }
+              const w = await loadWorkspace(current);
+              const items: PanelItem[] = [...(w?.artifacts || []).map((a: any) => ({ kind: "artifact", id: a.id, title: a.title })),
+                ...(w?.images || []).slice(0, 4).map((r: any) => ({ kind: "image", id: r.id, title: r.title }))];
+              if (!items.length) { toast("Aucun artefact ni image dans cette conversation pour l'instant."); return; }
+              setPanel({ open: true, items, active: 0 });
+            }} title="Artefacts et images de cette conversation"><Icon name="panel" size={15} /> Espace de travail{wsCount ? ` (${wsCount})` : ""}</button>
+          </div>
+        )}
         <div className="messages" ref={scroller}
           onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
           {messages.length === 0 ? (
@@ -294,7 +377,8 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
                 </div>
               )}
             </div>
-          ) : messages.map((m, i) => <Bubble key={i} m={m} name={name} goDoc={goDoc} goResearch={goResearch}
+          ) : messages.map((m, i) => <Bubble key={i} m={m} name={name} goDoc={goDoc} goResearch={goResearch} toast={toast} openUrl={openUrl}
+            openItem={openItem} editImage={(r) => { setInput(`Modifie cette image (jarvis-image:${r.id}) : `); box.current?.focus(); }}
             launch={async (query) => {
               try {
                 const r = await api("POST", "/api/apps/launch", { query });
@@ -324,12 +408,17 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
           </div>
         )}
         <div className="composer">
+          {activeItem?.kind === "artifact" && <div className="composer-ctx"><Icon name="artifact" size={13} /> Artefact ouvert : <b>{activeItem.title}</b> — vos demandes de modification s'y appliquent.</div>}
           <textarea ref={box} rows={1} value={input} placeholder={`Écrire à ${name}…  (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)`}
             onChange={(e) => { setInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 220) + "px"; }}
             onKeyDown={onKey} aria-label="Message" />
           <div className="composer-bar">
             <ModelSelect providers={state.providers} value={model} onChange={setModel}
               emptyLabel={state.settings.auto_route ? "Auto — choix selon la tâche" : "Modèle par défaut"} className="select compact" />
+            <div className="tools-pick" role="radiogroup" aria-label="Outil">
+              {TOOLS.map(([k, l, t]) => <button key={k} role="radio" aria-checked={tool === k} className={`chip ${tool === k ? "on" : ""}`} title={t} onClick={() => setTool(k)}>
+                {k && <Icon name={{ image: "image", artifact: "artifact", web: "globe" }[k]!} size={13} />}{l}</button>)}
+            </div>
             <button className={`chip-toggle ${deep ? "on" : ""}`} onClick={() => setDeep(!deep)} aria-pressed={deep}
               title="Décompose le problème en étapes, puis fait vérifier la réponse et la corrige si besoin (plus lent)">
               <Icon name="bolt" size={14} /> Réflexion approfondie
@@ -345,6 +434,75 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
           </div>
         </div>
       </section>
+      {panel.open && activeItem && (
+        <aside className="wpanel" aria-label="Espace de travail">
+          <div className="wtabs">
+            {panel.items.map((it, i) => (
+              <div key={`${it.kind}${it.id}`} className={`wtab ${i === panel.active ? "on" : ""}`}>
+                <button onClick={() => setPanel({ ...panel, active: i })} title={it.title}><Icon name={it.kind === "artifact" ? "artifact" : "image"} size={13} /><span>{it.title || `n° ${it.id}`}</span></button>
+                <button className="icon-btn" aria-label="Fermer" onClick={() => closeItem(i)}><Icon name="x" size={12} /></button>
+              </div>))}
+            <span className="grow" />
+            <button className="icon-btn" title="Masquer le panneau" aria-label="Masquer le panneau" onClick={() => setPanel({ ...panel, open: false })}><Icon name="panel" size={16} /></button>
+          </div>
+          {activeItem.kind === "artifact"
+            ? <ArtifactViewer key={activeItem.id} id={activeItem.id} toast={toast} compact
+                onAsk={(instruction, selection) => send(instruction, false, { artifact_id: activeItem.id, selection })} />
+            : <PanelImage id={activeItem.id} toast={toast} onEdit={(r) => { setInput(`Modifie cette image (jarvis-image:${r.id}) : `); box.current?.focus(); }} />}
+        </aside>
+      )}
+    </div>
+  );
+}
+
+function PanelImage({ id, toast, onEdit }: { id: number; toast: (t: string, k?: string) => void; onEdit: (r: Resource) => void }) {
+  const [list, setList] = useResources([id]);
+  const r = list[0];
+  if (!r) return <p className="muted pad">Image introuvable.</p>;
+  return (
+    <div className="pimage">
+      <img src={r.src} alt={r.title} />
+      {r.meta?.prompt && <p className="muted small">« {r.meta.prompt} » — {r.meta.model}</p>}
+      <ImageTile r={r} toast={toast} small onChange={(x) => x && setList([x])} onEdit={onEdit} />
+    </div>
+  );
+}
+
+function MissionBlock({ m, toast }: { m: Message; toast: (t: string, k?: string) => void }) {
+  const lv = m.meta.live;
+  const steps = (lv?.steps?.length ? lv.steps : m.meta.mission?.steps) || [];
+  const [status, setStatus] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!m.pending && m.meta.mission_id) api("GET", `/api/missions/${m.meta.mission_id}`).then((x) => setStatus(x.status)).catch(() => {});
+  }, [m.pending, m.meta.mission_id]);
+  if (!steps.length) return null;
+  return (
+    <div className="mission-block">
+      <h4>Mission{(lv?.objective || m.meta.mission?.objective) ? "" : ""} — {steps.filter((x) => x.state === "terminée").length}/{steps.length} étape{steps.length > 1 ? "s" : ""}
+        {(lv?.planner || m.meta.mission?.planner) && <small className="muted"> · {lv?.planner || m.meta.mission?.planner}</small>}</h4>
+      <MissionSteps steps={steps} approval={lv?.approval || null} missionId={m.meta.mission_id} status={m.pending ? "en cours" : status} toast={toast} compact={m.pending} />
+    </div>
+  );
+}
+
+function Creations({ m, toast, openItem, editImage }: { m: Message; toast: (t: string, k?: string) => void; openItem: (it: PanelItem) => void; editImage: (r: Resource) => void }) {
+  const [imgs, setImgs] = useResources(m.meta.images);
+  const [arts, setArts] = useState<Artifact[]>([]);
+  const key = (m.meta.artifacts || []).join(",");
+  useEffect(() => {
+    if (!key) { setArts([]); return; }
+    Promise.all(key.split(",").map((id) => api<Artifact>("GET", `/api/artifacts/${id}`).catch(() => null))).then((xs) => setArts(xs.filter(Boolean) as Artifact[]));
+  }, [key]);
+  if (!imgs.length && !arts.length) return null;
+  return (
+    <div className="creations">
+      {arts.map((a) => (
+        <button key={a.id} className="acard" onClick={() => openItem({ kind: "artifact", id: a.id, title: a.title })}>
+          <Icon name="artifact" size={20} /><span><b>{a.title}</b><i>{a.kind_label} · version {a.version}</i></span><em>Ouvrir</em>
+        </button>))}
+      {imgs.length > 0 && <div className="igrid chat">{imgs.map((r) => <ImageTile key={r.id} r={r} toast={toast} small
+        onChange={(x) => x && setImgs(imgs.map((y) => (y.id === x.id ? x : y)))} onEdit={editImage}
+        onOpen={(x) => openItem({ kind: "image", id: x.id, title: x.title })} />)}</div>}
     </div>
   );
 }
@@ -352,7 +510,8 @@ export function ChatView({ state, active, setPhase, phase, toast, refreshState, 
 const STRAT_TAG: Record<string, string> = { directe: "Réponse directe", contextuelle: "Avec contexte", approfondie: "Approfondie", "décomposée": "En étapes" };
 const STEP_ICON: Record<string, string> = { "en attente": "○", "en cours": "◔", "terminée": "●", "échec": "✕", redondante: "≈", "non exécutée": "–" };
 
-function Bubble({ m, name, goDoc, research, goResearch, launch }: { m: Message; name: string; goDoc: (id: number) => void; research: (mode: string) => void; goResearch: () => void; launch: (q: string) => void }) {
+function Bubble({ m, name, goDoc, research, goResearch, launch, toast, openUrl, openItem, editImage }: { m: Message; name: string; goDoc: (id: number) => void; research: (mode: string) => void; goResearch: () => void; launch: (q: string) => void;
+  toast: (t: string, k?: string) => void; openUrl: (u: string) => void; openItem: (it: PanelItem) => void; editImage: (r: Resource) => void }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   if (m.role === "user") return <div className="msg user"><div className="bubble">{m.content}</div></div>;
@@ -429,7 +588,11 @@ function Bubble({ m, name, goDoc, research, goResearch, launch }: { m: Message; 
           {v && v.problemes?.length > 0 && <div><h4>Problèmes relevés par le contrôle</h4><ul>{v.problemes.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
         </div>
       )}
+      {(m.meta.live || m.meta.mission) && <MissionBlock m={m} toast={toast} />}
       {m.content && <Markdown text={m.content} />}
+      {!m.pending && <Creations m={m} toast={toast} openItem={openItem} editImage={editImage} />}
+      {!m.pending && (m.meta.web_sources || []).length > 0 && <WebSources sources={m.meta.web_sources!} toast={toast} openUrl={openUrl}
+        cited={new Set(Array.from(m.content.matchAll(/\[W(\d+)\]/g), (x) => +x[1]))} />}
       {!m.pending && srcs.length > 0 && (
         <div className="sources">
           <h4>{cited.length ? "Sources citées" : "Passages consultés (non cités dans la réponse)"}</h4>
