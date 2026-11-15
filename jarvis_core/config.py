@@ -95,6 +95,8 @@ DEFAULTS = {
     "image_model": "",             # modèle Gemini (vide = modèle par défaut)
     "image_cf_model": "",          # modèle Cloudflare (vide = FLUX.2 [klein] 4B)
     "image_cf_account": "",        # identifiant de compte Cloudflare (le jeton est chiffré avec les autres clés)
+    "image_comfy_url": "http://127.0.0.1:8000",   # ComfyUI sur ce PC (8000 : application ComfyUI ; 8188 : version portable)
+    "image_comfy_model": "",       # checkpoint ComfyUI (vide = le premier disponible)
     "image_cf_base": "",           # adresse de l'API Cloudflare (vide = officielle ; utilisée par les tests)
     "image_size": "",              # "", "1K", "2K" ou "4K"
     "images_keep_days": 7,         # images générées non enregistrées : effacées après ce délai

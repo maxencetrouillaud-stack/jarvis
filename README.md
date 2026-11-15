@@ -119,7 +119,12 @@ plein écran, « Demander à Jarvis » sur la page ouverte.
 au choix parmi celles du modèle), style, taille 1K/2K/4K, 1 à 4 variantes, modification d'une image (« ajoute… », « retire… »,
 « passe en aquarelle »), version haute résolution régénérée par le modèle, galerie (seules les images enregistrées sont gardées ;
 les autres sont effacées après le délai réglé), utilisation dans un artefact (`jarvis-image:N`).
-- **Fournisseur gratuit (par défaut depuis la 0.7.1) : Cloudflare Workers AI**, modèles FLUX. Compte Cloudflare gratuit,
+- **Fournisseur gratuit et illimité : ComfyUI sur votre PC** (0.7.2). Installez ComfyUI Desktop (comfy.org, gratuit) et un
+  modèle (checkpoint) ; Jarvis lui envoie un flux de travail standard par son API locale (`http://127.0.0.1:8000`). Rien ne sort
+  du PC. Avec une RTX 4050 (6 Go) : SDXL « Lightning »/« Turbo » ou SD 1.5. Les descriptions sont traduites en anglais par le
+  modèle de texte ; « modifier une image » la redessine à partir de l'originale (image vers image), moins précis qu'un modèle
+  d'édition. Testé contre un faux ComfyUI au format de son API, pas encore contre le vrai.
+- **Fournisseur gratuit avec limite quotidienne : Cloudflare Workers AI**, modèles FLUX. Compte Cloudflare gratuit,
   identifiant de compte et jeton d'API « Workers AI » à saisir dans Paramètres › Génération d'images (le jeton est chiffré et
   jamais renvoyé à l'interface). Gratuit dans la limite de 10 000 « neurones » par jour, remise à zéro à minuit UTC : environ
   100 images par jour avec FLUX.2 [klein] 4B (crée et modifie), davantage avec FLUX.1 [schnell] (crée seulement). Pour modifier
@@ -362,7 +367,7 @@ pour tous les nœuds, un pour tous les liens.
 
 ## Comment c'est testé — et ce qui ne l'est pas
 
-- `python -m unittest discover -s tests` : 157 tests du moteur (dont 29 pour l'espace de travail de la 0.7 et 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
+- `python -m unittest discover -s tests` : 158 tests du moteur (dont 30 pour l'espace de travail de la 0.7 et 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
   extraction de documents, base de connaissances, collecte, réponses sourcées, migration, sphère, lancement d'applications,
   et les 4 modules de la 0.4 : relevé de formules, versions, dossier surveillé, index approché, chercheur, validation, export).
 - `node tests/e2e.mjs` : parcours complet de l'interface dans un vrai navigateur (demande `npm install` et Playwright).

@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fakes import Fake, FakeImages, FakeScience, FakeWeb  # noqa: E402
+from fakes import Fake, FakeComfy, FakeImages, FakeScience, FakeWeb  # noqa: E402
 from jarvis_core.collect import Wikipedia  # noqa: E402
 from jarvis_core.providers import REGISTRY  # noqa: E402
 from jarvis_core.server import App, serve  # noqa: E402
@@ -158,9 +158,10 @@ def main():
         "<table><tr><th>Charge</th><th>Vitesse</th></tr><tr><td>500 kg</td><td>4 m/min</td></tr></table></main></body></html>").encode())
     web.pages["/levage"] = ("text/html", "<html><head><title>Règles de levage</title></head><body><p>Toujours vérifier la charge maximale d'utilisation avant de lever une charge, et ne jamais passer sous la charge.</p></body></html>".encode())
     app.demo_web = web.url
+    app.demo_comfy = FakeComfy().url
     app.app_runner = lambda target: None   # aucun programme n'est réellement lancé pendant le test
     httpd = serve(app, 0)
-    print(httpd.server_address[1], app.demo_web, flush=True)   # port de Jarvis, puis adresse des pages de test
+    print(httpd.server_address[1], app.demo_web, app.demo_comfy, flush=True)   # port de Jarvis, puis adresse des pages de test
     httpd.serve_forever()
 
 

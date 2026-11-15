@@ -399,3 +399,76 @@ class FakeCloudflare:
     def stop(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+class FakeComfy:
+    """Faux ComfyUI (API locale : /object_info, /prompt, /upload/image, /history/{id}, /view) au format de l'API réelle."""
+
+    def __init__(self, checkpoints=("dreamshaperXL_lightningDPMSDE.safetensors", "v1-5-pruned-emaonly.safetensors")):
+        self.checkpoints = list(checkpoints)
+        self.prompts, self.uploads = [], []
+        self.history_calls = {}
+        self.oom = False
+        me = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _j(self, obj, code=200):
+                b = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+            def do_GET(self):
+                if self.path == "/object_info/CheckpointLoaderSimple":
+                    return self._j({"CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [me.checkpoints, {}]}}}})
+                if self.path.startswith("/history/"):
+                    pid = self.path.split("/")[-1]
+                    n = me.history_calls[pid] = me.history_calls.get(pid, 0) + 1
+                    if n < 2:
+                        return self._j({})          # pas encore terminé
+                    if me.oom:
+                        return self._j({pid: {"outputs": {}, "status": {"status_str": "error", "completed": False, "messages": [
+                            ["execution_error", {"exception_message": "CUDA out of memory. Tried to allocate 2.00 GiB"}]]}}})
+                    return self._j({pid: {"outputs": {"7": {"images": [{"filename": "jarvis_00001_.png", "subfolder": "",
+                                                                         "type": "output"}]}},
+                                          "status": {"status_str": "success", "completed": True, "messages": []}}})
+                if self.path.startswith("/view?"):
+                    b = png((10, 200, 90))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(b)))
+                    self.end_headers()
+                    return self.wfile.write(b)
+                self._j({}, 404)
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(n)
+                if self.path == "/upload/image":
+                    me.uploads.append(raw)
+                    return self._j({"name": "jarvis-ref.png", "subfolder": "", "type": "input"})
+                if self.path == "/prompt":
+                    body = json.loads(raw)
+                    wf = body["prompt"]
+                    me.prompts.append(wf)
+                    ck = [n for n in wf.values() if n["class_type"] == "CheckpointLoaderSimple"][0]["inputs"]["ckpt_name"]
+                    if ck not in me.checkpoints:
+                        return self._j({"error": {"type": "prompt_outputs_failed_validation", "message":
+                                        "Prompt outputs failed validation", "details": ""}, "node_errors": {"1": {"errors": [
+                                        {"message": "Value not in list", "details": f"ckpt_name: '{ck}' not in list"}]}}}, 400)
+                    return self._j({"prompt_id": f"p{len(me.prompts)}", "number": len(me.prompts), "node_errors": {}})
+                self._j({}, 404)
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.httpd.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()

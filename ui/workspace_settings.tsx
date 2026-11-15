@@ -31,7 +31,10 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
     try { await api("POST", "/api/browser/install", {}); toast("Installation lancée : suivez la progression ci-dessous."); load(); } catch (e: any) { toast(e.message, "error"); }
   };
   const listModels = async () => {
-    try { const r = await api("POST", "/api/images/models", {}); setModels(r.models); toast(r.models.length ? `${r.models.length} modèle(s) d'images disponible(s) avec votre clé.` : "Aucun modèle d'images listé (clé absente ou refusée)."); }
+    try {
+      const r = await api("POST", "/api/images/models", {}); setModels(r.models);
+      toast(r.models.length ? `${r.models.length} modèle(s) d'images disponible(s).` : (r.error || "Aucun modèle d'images listé (clé absente ou refusée)."), r.models.length ? undefined : "error");
+    }
     catch (e: any) { toast(e.message, "error"); }
   };
   const ch = browser?.engines?.chromium;
@@ -92,11 +95,29 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
       <div className="form three">
         <label>Fournisseur
           <select className="select" value={s.image_provider} onChange={(e) => { patch({ image_provider: e.target.value }); setModels([]); setTimeout(load, 300); }}>
+            <option value="comfyui">ComfyUI sur ce PC — carte graphique (gratuit, illimité)</option>
             <option value="cloudflare">Cloudflare Workers AI — FLUX (gratuit, limite quotidienne)</option>
             <option value="gemini">Google Gemini — Nano Banana (payant)</option></select></label>
       </div>
       <div className={`notice ${img?.available ? "info" : "warn"} slim`}><Icon name="image" size={15} />
         <span>{img?.available ? `${img?.providers?.find((p: any) => p.id === s.image_provider)?.label} prêt.` : `Indisponible : ${img?.reason || "…"}.`} {img?.providers?.find((p: any) => p.id === s.image_provider)?.note}</span></div>
+      {s.image_provider === "comfyui" && <>
+        <ol className="steps small">
+          <li>Installez <b>ComfyUI Desktop</b> pour Windows depuis <b>comfy.org</b> (gratuit), choisissez « NVIDIA » à l'installation.</li>
+          <li>Dans ComfyUI, téléchargez un modèle (checkpoint). Avec une RTX 4050 (6 Go), prenez un modèle <b>SDXL « Lightning » ou « Turbo »</b> (une image en quelques dizaines de secondes) ou <b>SD 1.5</b> (plus rapide, moins détaillé).</li>
+          <li>Laissez ComfyUI ouvert pendant que Jarvis génère. L'application écoute sur <code>http://127.0.0.1:8000</code> (la version portable sur <code>:8188</code>).</li>
+        </ol>
+        <div className="form three">
+          <label>Adresse de ComfyUI
+            <input className="input" defaultValue={s.image_comfy_url} spellCheck={false} onBlur={(e) => e.target.value.trim() !== s.image_comfy_url && patch({ image_comfy_url: e.target.value.trim() })} /></label>
+          <label>Modèle (checkpoint)
+            <select className="select" value={s.image_comfy_model} onChange={(e) => patch({ image_comfy_model: e.target.value })}>
+              <option value="">Le premier disponible dans ComfyUI</option>
+              {Array.from(new Set([...models, s.image_comfy_model].filter(Boolean))).map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
+          <div className="field-end"><button className="btn" onClick={listModels}><Icon name="refresh" size={14} /> Tester et lister les modèles</button></div>
+        </div>
+        <p className="muted small">Les descriptions sont traduites en anglais par votre modèle de texte (les modèles Stable Diffusion comprennent mal le français). « Modifier une image » redessine l'image en suivant la consigne : moins précis qu'un modèle d'édition dédié.</p>
+      </>}
       {s.image_provider === "cloudflare" && <>
         <ol className="steps small">
           <li>Créez un compte gratuit sur <b>dash.cloudflare.com</b> (aucune carte bancaire n'est demandée pour l'offre gratuite).</li>
@@ -115,7 +136,7 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
         {img?.install && img.install.state !== "idle" && <pre className="install-log">{`Installation : ${img.install.state}\n` + img.install.log.join("\n")}</pre>}
       </>}
       <div className="form three">
-        <label>Modèle d'images
+        {s.image_provider !== "comfyui" && <label>Modèle d'images
           {s.image_provider === "cloudflare"
             ? <select className="select" value={s.image_cf_model} onChange={(e) => patch({ image_cf_model: e.target.value })}>
                 <option value="">FLUX.2 [klein] 4B — crée et modifie (≈ 100 images/jour gratuites)</option>
@@ -123,7 +144,7 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
                 {models.filter((m) => !["@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-1-schnell"].includes(m)).map((m) => <option key={m} value={m}>{m}</option>)}</select>
             : <select className="select" value={s.image_model} onChange={(e) => patch({ image_model: e.target.value })}>
                 <option value="">Par défaut ({img?.providers?.find((p: any) => p.id === "gemini")?.models?.[0] || "…"})</option>
-                {imgModels.map((m) => <option key={m} value={m}>{m}</option>)}</select>}</label>
+                {imgModels.map((m) => <option key={m} value={m}>{m}</option>)}</select>}</label>}
         <label>Taille par défaut
           <select className="select" value={s.image_size} onChange={(e) => patch({ image_size: e.target.value })}>
             <option value="">Définie par le modèle</option>{["1K", "2K", "4K"].map((x) => <option key={x}>{x}</option>)}</select></label>
@@ -131,7 +152,7 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
           <select className="select" value={s.images_keep_days} onChange={(e) => patch({ images_keep_days: +e.target.value })}>
             {[1, 3, 7, 14, 30].map((n) => <option key={n} value={n}>{n} jour{n > 1 ? "s" : ""}</option>)}</select></label>
       </div>
-      <div className="row"><button className="btn" onClick={listModels}><Icon name="refresh" size={14} /> Lister les modèles d'images de ma clé</button></div>
+      {s.image_provider !== "comfyui" && <div className="row"><button className="btn" onClick={listModels}><Icon name="refresh" size={14} /> Lister les modèles d'images de ma clé</button></div>}
     </div>
   );
 }

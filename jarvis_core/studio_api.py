@@ -355,7 +355,8 @@ def handle(app, method, path, q, body):
     if path == "/api/images/install-pillow" and method == "POST":
         return im.start_pillow_install()
     if path == "/api/images/models" and method == "POST":
-        return {"models": im.refresh_models(), "state": im.state()}
+        models, err = im.refresh_models()
+        return {"models": models, "error": err, "state": im.state()}
     if path == "/api/images/generate" and method == "POST":
         b = body()
         try:

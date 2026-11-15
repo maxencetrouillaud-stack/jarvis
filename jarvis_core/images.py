@@ -297,7 +297,136 @@ def _explain_cf(code, msg):
     return f"Cloudflare : HTTP {code} — {msg[:300]}"
 
 
-ADAPTERS = {"cloudflare": CloudflareImages, "gemini": GeminiImages}
+class ComfyImages:
+    """ComfyUI installé sur le PC (carte graphique NVIDIA) : gratuit, illimité, sans compte, rien ne sort du PC.
+    Jarvis envoie un flux de travail standard (modèle « checkpoint » → texte → échantillonneur → image) à l'API locale
+    de ComfyUI (/prompt, /history, /view) ; pour une modification, l'image est envoyée (/upload/image) et retravaillée
+    (« image vers image » : le modèle redessine l'image en suivant la consigne, moins précisément qu'un modèle d'édition)."""
+    id, label = "comfyui", "ComfyUI sur ce PC (gratuit, carte graphique)"
+    key_name = None
+    DEFAULT_MODELS = []
+    note = ("Gratuit et illimité : ComfyUI doit être installé et ouvert sur ce PC, avec au moins un modèle (checkpoint) "
+            "téléchargé. Avec 6 Go de mémoire vidéo, préférez un modèle SDXL « Lightning » ou « Turbo » (rapide) ou SD 1.5.")
+    NEGATIVE = "blurry, low quality, deformed, distorted, extra fingers, watermark, signature, text artifacts"
+
+    def __init__(self, base_url, checkpoint=""):
+        self.base, self.checkpoint = base_url.rstrip("/"), checkpoint
+
+    def _get(self, path, timeout=20):
+        req = urllib.request.Request(self.base + path, headers={"User-Agent": "Jarvis"})
+        try:
+            with _opener(self.base).open(req, timeout=timeout) as r:
+                return r.read(), r.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as e:
+            raise ImageError(f"ComfyUI : HTTP {e.code} — {e.read().decode('utf-8', 'replace')[:300]}") from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise ImageError(f"ComfyUI ne répond pas à {self.base} : ouvrez ComfyUI sur ce PC (et vérifiez l'adresse "
+                             "dans Paramètres › Génération d'images).") from None
+
+    def _post(self, path, data, ctype):
+        req = urllib.request.Request(self.base + path, data=data, method="POST",
+                                     headers={"Content-Type": ctype, "User-Agent": "Jarvis"})
+        try:
+            with _opener(self.base).open(req, timeout=60) as r:
+                return json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", "replace")
+            try:
+                j = json.loads(raw)
+                err = j.get("error") or {}
+                msg = err.get("message", "") + (" — " + err.get("details", "") if err.get("details") else "")
+                for nid, ne in (j.get("node_errors") or {}).items():
+                    for x in ne.get("errors", [])[:2]:
+                        msg += f" ; {x.get('message', '')} {x.get('details', '')}"
+            except ValueError:
+                msg = raw[:300]
+            raise ImageError(f"ComfyUI a refusé la demande : {msg[:400]}") from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise ImageError(f"ComfyUI ne répond pas à {self.base} : ouvrez ComfyUI sur ce PC.") from None
+
+    def list_models(self):
+        raw, _ = self._get("/object_info/CheckpointLoaderSimple")
+        try:
+            j = json.loads(raw.decode("utf-8"))
+            return list(j["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"][0])
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise ImageError("Réponse inattendue de ComfyUI (liste des modèles)") from None
+
+    @staticmethod
+    def preset(ckpt):
+        n = ckpt.lower()
+        fast = any(k in n for k in ("lightning", "turbo", "hyper", "lcm", "schnell"))
+        xl = any(k in n for k in ("xl", "pony", "illustrious", "juggernaut", "flux"))
+        return {"steps": 6 if fast else 28, "cfg": 2.0 if fast else 6.5,
+                "sampler": "dpmpp_sde" if fast else "dpmpp_2m", "scheduler": "karras", "xl": xl}
+
+    def generate(self, model, prompt, refs=(), aspect="1:1", size=""):
+        import random
+        import time as _t
+        ckpt = model if model and not model.startswith("(") else self.checkpoint
+        if not ckpt:
+            models = self.list_models()
+            if not models:
+                raise ImageError("Aucun modèle dans ComfyUI : téléchargez un checkpoint (dossier models/checkpoints).")
+            ckpt = models[0]
+        p = self.preset(ckpt)
+        W, H = dims(aspect, size) if p["xl"] else dims(aspect, "")
+        if not p["xl"]:   # SD 1.5 : environ 512 px de côté court
+            k = 768 / max(W, H)
+            W, H = max(256, int(W * k) // 8 * 8), max(256, int(H * k) // 8 * 8)
+        wf = {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": ckpt}},
+            "2": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt[:2000], "clip": ["1", 1]}},
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": self.NEGATIVE, "clip": ["1", 1]}},
+            "5": {"class_type": "KSampler", "inputs": {
+                "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0],
+                "seed": random.randint(1, 2 ** 48), "steps": p["steps"], "cfg": p["cfg"], "sampler_name": p["sampler"],
+                "scheduler": p["scheduler"], "denoise": 1.0}},
+            "6": {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+            "7": {"class_type": "SaveImage", "inputs": {"images": ["6", 0], "filename_prefix": "jarvis"}},
+        }
+        refs = list(refs)
+        if refs:   # image vers image : la première référence sert de point de départ
+            data, mime = refs[0]
+            body, ctype = _multipart([("overwrite", "true")], [("image", f"jarvis-ref-{uuid.uuid4().hex[:8]}.png", data, mime)])
+            up = self._post("/upload/image", body, ctype)
+            name = (up.get("subfolder") + "/" if up.get("subfolder") else "") + up.get("name", "")
+            wf["8"] = {"class_type": "LoadImage", "inputs": {"image": name}}
+            wf["9"] = {"class_type": "ImageScale", "inputs": {"image": ["8", 0], "upscale_method": "lanczos",
+                                                              "width": W, "height": H, "crop": "center"}}
+            wf["4"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["9", 0], "vae": ["1", 2]}}
+            wf["5"]["inputs"]["denoise"] = 0.6
+        else:
+            wf["4"] = {"class_type": "EmptyLatentImage", "inputs": {"width": W, "height": H, "batch_size": 1}}
+        cid = uuid.uuid4().hex
+        pid = self._post("/prompt", json.dumps({"prompt": wf, "client_id": cid}).encode(), "application/json").get("prompt_id")
+        if not pid:
+            raise ImageError("ComfyUI n'a pas accepté la demande.")
+        end = _t.time() + 600
+        while _t.time() < end:
+            raw, _ = self._get(f"/history/{pid}")
+            h = json.loads(raw.decode("utf-8") or "{}").get(pid)
+            if h:
+                st = h.get("status") or {}
+                if st.get("status_str") == "error":
+                    msgs = [m[1].get("exception_message", "") for m in st.get("messages", [])
+                            if isinstance(m, list) and len(m) > 1 and m[0] == "execution_error"]
+                    raise ImageError("ComfyUI a échoué : " + (msgs[0][:300] if msgs else "erreur d'exécution")
+                                     + (" (mémoire vidéo insuffisante : essayez un modèle plus léger ou une taille plus petite)"
+                                        if msgs and "out of memory" in msgs[0].lower() else ""))
+                for node in (h.get("outputs") or {}).values():
+                    for im in node.get("images") or []:
+                        q = urllib.parse.urlencode({"filename": im["filename"], "subfolder": im.get("subfolder", ""),
+                                                    "type": im.get("type", "output")})
+                        data, ctype = self._get(f"/view?{q}", 60)
+                        return [(data, sniff(data) or "image/png")], ""
+                if st.get("completed"):
+                    raise ImageError("ComfyUI a terminé sans produire d'image.")
+            _t.sleep(1.0)
+        raise ImageError("ComfyUI : délai dépassé (10 minutes).")
+
+
+ADAPTERS = {"comfyui": ComfyImages, "cloudflare": CloudflareImages, "gemini": GeminiImages}
 CF_BASE = "https://api.cloudflare.com/client/v4"
 
 
@@ -320,11 +449,15 @@ class ImageService:
         if pid == "cloudflare":
             return cls(self.settings.get("image_cf_base") or CF_BASE, self.keys.get("cloudflare"),
                        self.settings.get("image_cf_account", ""))
+        if pid == "comfyui":
+            return cls(self.settings.get("image_comfy_url") or "http://127.0.0.1:8000", self.settings.get("image_comfy_model", ""))
         base = (self.settings.get("providers", {}).get(cls.key_name) or {}).get("base_url") or \
             "https://generativelanguage.googleapis.com/v1beta"
         return cls(base, self.keys.get(cls.key_name))
 
     def _ready(self, pid):
+        if pid == "comfyui":
+            return (True, "") if self.settings.get("image_comfy_url") else (False, "adresse de ComfyUI manquante")
         if pid == "cloudflare":
             if not self.settings.get("image_cf_account"):
                 return False, "identifiant de compte Cloudflare manquant (Paramètres › Génération d'images)"
@@ -355,18 +488,23 @@ class ImageService:
                 "pillow": pillow_installed(), "install": dict(self.install, log=self.install["log"][-30:])}
 
     def refresh_models(self):
+        """-> (modèles, erreur éventuelle)."""
         try:
             ad = self.adapter()
             models = ad.list_models()
             if models:
                 with self._lock:
                     self._models[ad.id] = models
-            return models
-        except (ImageError, ProviderError):
-            return []
+            elif ad.id == "comfyui":
+                return [], "ComfyUI répond, mais aucun modèle (checkpoint) n'y est installé."
+            return models, ""
+        except (ImageError, ProviderError) as e:
+            return [], str(e)
 
     def model(self):
         pid = self.settings.get("image_provider", "gemini")
+        if pid == "comfyui":
+            return self.settings.get("image_comfy_model", "") or "(premier modèle de ComfyUI)"
         m = self.settings.get("image_cf_model" if pid == "cloudflare" else "image_model", "")
         return m or ADAPTERS.get(pid, GeminiImages).DEFAULT_MODELS[0]
 
@@ -427,6 +565,21 @@ class ImageService:
             out.append((data, mime or sniff(data) or "image/png"))
         return out
 
+    translate = None   # branché par l'application : (texte) -> description anglaise pour Stable Diffusion
+
+    def to_english(self, prompt, style, edit):
+        s = STYLES.get(style, STYLES["libre"])[1]
+        text = re.sub(r"^\s*(jarvis[\s,:]+)?", "", prompt.strip(), flags=re.I)
+        src = text + (f" — style : {s}" if s else "")
+        if self.translate:
+            try:
+                out = (self.translate(src) or "").strip()
+                if out:
+                    return out[:1500]
+            except Exception:
+                pass
+        return src
+
     @staticmethod
     def compose(prompt, style="libre", has_refs=False, edit=False):
         prompt = re.sub(r"^\s*(jarvis[\s,:]+)?", "", prompt.strip(), flags=re.I)
@@ -457,6 +610,8 @@ class ImageService:
         model = self.model()
         ref_data = self._refs(refs)
         full = self.compose(prompt, style, bool(ref_data), edit)
+        if ad.id == "comfyui":   # les modèles Stable Diffusion comprennent mal le français : description en anglais
+            full = self.to_english(prompt, style, edit)
         results, errors = [], []
 
         def one(i):

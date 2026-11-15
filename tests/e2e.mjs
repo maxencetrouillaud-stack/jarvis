@@ -8,7 +8,7 @@ const { chromium } = require("playwright");
 
 const shots = process.argv[2];
 const py = spawn("python3", ["tests/demo_server.py"], { stdio: ["ignore", "pipe", "inherit"] });
-const [port, webUrl] = await new Promise((res) => py.stdout.once("data", (d) => res(String(d).trim().split(/\s+/))));
+const [port, webUrl, comfyUrl] = await new Promise((res) => py.stdout.once("data", (d) => res(String(d).trim().split(/\s+/))));
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: shots ? 2 : 1 });
 const errors = [];
@@ -672,6 +672,21 @@ try {
   await page.locator(".notice", { hasText: "Cloudflare Workers AI (FLUX, gratuit) prêt" }).waitFor();
   await shot("27-cloudflare");
   step("générateur d'images gratuit : Cloudflare configuré dans les paramètres, jeton chiffré et jamais renvoyé");
+
+  await page.getByLabel("Fournisseur").selectOption("comfyui");
+  const cu = page.getByRole("textbox", { name: "Adresse de ComfyUI" });
+  await cu.fill(comfyUrl);
+  await cu.blur();
+  await page.waitForFunction(async () => true);
+  await page.getByRole("button", { name: "Tester et lister les modèles" }).click();
+  await page.locator(".toast", { hasText: "2 modèle(s) d'images disponible(s)" }).waitFor();
+  await page.getByLabel("Modèle (checkpoint)").selectOption("dreamshaperXL_lightningDPMSDE.safetensors");
+  await nav("Images").click();
+  await page.getByLabel("Description").fill("un treuil électrique d'atelier, rendu technique");
+  await page.getByRole("button", { name: "Générer" }).click();
+  await page.locator(".toast", { hasText: "dreamshaperXL_lightningDPMSDE" }).waitFor();
+  await shot("28-comfyui");
+  step("générateur local : ComfyUI sur le PC détecté, modèle choisi, image générée (gratuit, illimité)");
 
   assert.deepEqual(errors.filter((e) => !e.includes("401") && !/Refused to connect|connect-src 'none'/.test(e)), [], "erreurs dans la console");
   // (les seuls messages filtrés ci-dessus sont ceux du test d'isolement : l'artefact a tenté d'appeler l'API et a été bloqué)

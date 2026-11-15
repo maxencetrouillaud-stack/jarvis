@@ -75,6 +75,7 @@ class App:
         self.ws = Workspace(self.store, self.home, self.bus, self.token)
         self.artifacts = Artifacts(self.ws, self.brain, self.settings)
         self.images = ImageService(self.ws, self.settings, self.keys)
+        self.images.translate = self._prompt_to_english
         self.allow_private = bool(ko.get("allow_private", False))
         self.browser = Browser(self.ws, self.settings, self.keys, self.research, self.allow_private,
                                self.research.wiki, (ko.get("endpoints") or {}).get("brave"), ko.get("install_cmds"))
@@ -102,6 +103,17 @@ class App:
                 pass
             for mid, _ in parts:
                 self.store.delete_memory(mid)
+
+    def _prompt_to_english(self, text):
+        """Description d'image en anglais pour les modèles Stable Diffusion locaux (modèle utilitaire)."""
+        try:
+            ref = self.brain.utility_ref(self.brain.pick_model("auto", text)[0][0])
+        except Exception:
+            return ""
+        return self.brain.complete(ref, "Translate this image description into an English Stable Diffusion prompt: "
+                                        "concise comma-separated descriptive phrases (subject, details, style, lighting, "
+                                        "composition). Keep every element requested. Output only the prompt, one line.",
+                                   [{"role": "user", "content": text}], 300, 0.3).strip().strip('"')
 
     def close(self):
         try:
@@ -418,7 +430,7 @@ def make_handler(app: App):
                                      ("browser_agent_engine", ("lecture", "chromium")),
                                      ("browser_chromium_channel", ("auto", "msedge", "chrome", "chromium")),
                                      ("browser_search_engine", tuple(studio_api.SEARCH_PAGES)),
-                                     ("image_provider", ("gemini", "cloudflare")),
+                                     ("image_provider", ("gemini", "cloudflare", "comfyui")),
                                      ("image_size", ("", "1K", "2K", "4K"))):
                     if key in body and body[key] not in allowed:
                         body[key] = allowed[0]
@@ -429,6 +441,15 @@ def make_handler(app: App):
                     if body["image_cf_model"] and not body["image_cf_model"].startswith("@cf/"):
                         raise HttpError(400, "Modèle Cloudflare invalide")
                 body.pop("image_cf_base", None)      # réservé aux tests
+                if "image_comfy_url" in body:   # ComfyUI : uniquement sur ce PC
+                    u = str(body["image_comfy_url"] or "").strip().rstrip("/")
+                    if not re.fullmatch(r"http://(127\.0\.0\.1|localhost):\d{2,5}", u):
+                        raise HttpError(400, "Adresse de ComfyUI invalide (ex. http://127.0.0.1:8000)")
+                    body["image_comfy_url"] = u
+                if "image_comfy_model" in body:
+                    body["image_comfy_model"] = str(body["image_comfy_model"] or "").strip()[:200]
+                    if re.search(r"\.\.|^[/\\]", body["image_comfy_model"]):
+                        raise HttpError(400, "Nom de modèle invalide")
                 if "image_cf_account" in body and not re.fullmatch(r"[0-9a-fA-F]{32}|", str(body["image_cf_account"] or "")):
                     raise HttpError(400, "Identifiant de compte Cloudflare invalide (32 caractères hexadécimaux)")
                 for key, lo, hi in (("orchestrator_max_steps", 2, 8), ("orchestrator_max_calls", 4, 40),

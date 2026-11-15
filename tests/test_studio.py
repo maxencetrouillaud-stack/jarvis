@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fakes import Fake, FakeCloudflare, FakeImages, FakeScience, FakeWeb, png  # noqa: E402
+from fakes import Fake, FakeCloudflare, FakeComfy, FakeImages, FakeScience, FakeWeb, png  # noqa: E402
 from test_core import Base, blob, text_of  # noqa: E402
 from jarvis_core import artifacts as art  # noqa: E402
 from jarvis_core.browser import Browser, Reader, classify_input, read_html  # noqa: E402
@@ -423,6 +423,47 @@ class Images(Base):
             app.images.generate("un logo", "logo", "carré")
         self.assertIn("Jeton Cloudflare refusé", str(e.exception))
         cf.stop()
+        app.close()
+
+    def test_comfyui_local_provider(self):
+        cu = FakeComfy()
+        app = studio_app(self.tmp)
+        app.settings.update({"image_provider": "comfyui", "image_comfy_url": cu.url})
+        app.images.translate = lambda text: "modern wooden house by a lake, evening light, 3d render"
+        self.assertEqual(app.images.adapter().list_models()[0], "dreamshaperXL_lightningDPMSDE.safetensors")
+        out = app.images.generate("une maison moderne en bois au bord d'un lac", "3d", "paysage")
+        wf = cu.prompts[0]
+        kinds = {n["class_type"]: n["inputs"] for n in wf.values()}
+        self.assertEqual(kinds["CheckpointLoaderSimple"]["ckpt_name"], "dreamshaperXL_lightningDPMSDE.safetensors")
+        self.assertEqual(kinds["CLIPTextEncode"]["text"] if False else [n["inputs"]["text"] for n in wf.values()
+                         if n["class_type"] == "CLIPTextEncode"][0], "modern wooden house by a lake, evening light, 3d render")
+        self.assertEqual(kinds["KSampler"]["steps"], 6)                       # modèle « Lightning » : réglages rapides
+        self.assertEqual((kinds["EmptyLatentImage"]["width"], kinds["EmptyLatentImage"]["height"]), (1024, 576))
+        self.assertEqual(app.ws.resource_bytes(out["images"][0]["id"])[0][:4], b"\x89PNG")
+        # modification : image envoyée à ComfyUI puis retravaillée (image vers image)
+        app.images.edit(out["images"][0]["id"], "ajoute un ponton")
+        wf2 = {n["class_type"]: n["inputs"] for n in cu.prompts[-1].values()}
+        self.assertIn("LoadImage", wf2)
+        self.assertEqual(wf2["KSampler"]["denoise"], 0.6)
+        self.assertEqual(len(cu.uploads), 1)
+        # SD 1.5 : résolution adaptée ; modèle absent : erreur claire de ComfyUI
+        app.settings.update({"image_comfy_model": "v1-5-pruned-emaonly.safetensors"})
+        app.images.generate("un chat", "libre", "carré")
+        lat = {n["class_type"]: n["inputs"] for n in cu.prompts[-1].values()}["EmptyLatentImage"]
+        self.assertEqual((lat["width"], lat["height"]), (768, 768))
+        app.settings.update({"image_comfy_model": "absent.safetensors"})
+        with self.assertRaises(Exception) as e:
+            app.images.generate("un chat", "libre", "carré")
+        self.assertIn("not in list", str(e.exception))
+        app.settings.update({"image_comfy_model": ""})
+        cu.oom = True
+        with self.assertRaises(Exception) as e:
+            app.images.generate("un chat", "libre", "carré")
+        self.assertIn("mémoire vidéo insuffisante", str(e.exception))
+        cu.stop()
+        with self.assertRaises(Exception) as e:
+            app.images.generate("un chat", "libre", "carré")
+        self.assertIn("ouvrez ComfyUI", str(e.exception))
         app.close()
 
     def test_reference_shrink_without_pillow(self):
