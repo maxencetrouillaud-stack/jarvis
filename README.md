@@ -119,9 +119,14 @@ plein écran, « Demander à Jarvis » sur la page ouverte.
 au choix parmi celles du modèle), style, taille 1K/2K/4K, 1 à 4 variantes, modification d'une image (« ajoute… », « retire… »,
 « passe en aquarelle »), version haute résolution régénérée par le modèle, galerie (seules les images enregistrées sont gardées ;
 les autres sont effacées après le délai réglé), utilisation dans un artefact (`jarvis-image:N`).
-- **Fournisseur : Google Gemini** (modèles « Nano Banana », API generateContent), avec votre clé Gemini de l'onglet Modèles.
-  **La génération d'images n'est pas incluse dans l'offre gratuite de l'API Gemini : la facturation doit être activée** sur le
-  projet Google de la clé. Ajouter un autre fournisseur = une classe dans `jarvis_core/images.py`.
+- **Fournisseur gratuit (par défaut depuis la 0.7.1) : Cloudflare Workers AI**, modèles FLUX. Compte Cloudflare gratuit,
+  identifiant de compte et jeton d'API « Workers AI » à saisir dans Paramètres › Génération d'images (le jeton est chiffré et
+  jamais renvoyé à l'interface). Gratuit dans la limite de 10 000 « neurones » par jour, remise à zéro à minuit UTC : environ
+  100 images par jour avec FLUX.2 [klein] 4B (crée et modifie), davantage avec FLUX.1 [schnell] (crée seulement). Pour modifier
+  une image, Cloudflare exige une image de moins de 512 px : Jarvis la réduit avec le module Pillow (bouton « Installer Pillow »).
+- **Fournisseur payant : Google Gemini** (« Nano Banana »), avec la clé Gemini de l'onglet Modèles. La génération d'images n'est
+  pas incluse dans l'offre gratuite de l'API Gemini : la facturation doit être activée. Ajouter un autre fournisseur = une
+  classe dans `jarvis_core/images.py`.
 - Dans la conversation, « génère-moi… », « crée un logo… », « transforme cette pièce en rendu réaliste », « modifie cette image… »
   déclenchent le générateur sans changer d'onglet.
 
@@ -357,7 +362,7 @@ pour tous les nœuds, un pour tous les liens.
 
 ## Comment c'est testé — et ce qui ne l'est pas
 
-- `python -m unittest discover -s tests` : 155 tests du moteur (dont 27 pour l'espace de travail de la 0.7 et 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
+- `python -m unittest discover -s tests` : 157 tests du moteur (dont 29 pour l'espace de travail de la 0.7 et 22 pour le cerveau central et la mémoire intelligente de la 0.6) (formats des 4 API, mémoire, routage, vérification, sécurité, sauvegardes,
   extraction de documents, base de connaissances, collecte, réponses sourcées, migration, sphère, lancement d'applications,
   et les 4 modules de la 0.4 : relevé de formules, versions, dossier surveillé, index approché, chercheur, validation, export).
 - `node tests/e2e.mjs` : parcours complet de l'interface dans un vrai navigateur (demande `npm install` et Playwright).
@@ -380,7 +385,9 @@ pour tous les nœuds, un pour tous les liens.
 - **Espace de travail (0.7)** : missions, passage des résultats entre agents, autorisation, reprise, isolation des artefacts,
   mode lecture, robots.txt, téléchargements refusés, recherche Brave et images testés contre des faux serveurs ; le **moteur
   Chromium et le contrôle d'exécution des artefacts ont tourné pour de vrai** (Chromium de Playwright, sous Linux), sur des pages
-  locales. **Aucune image n'a été générée par le vrai Gemini** : le format des requêtes suit la documentation de Google relue
+  locales. **Aucune image n'a été générée par le vrai Cloudflare** : l'adaptateur suit la documentation de Cloudflare (relue en
+  novembre 2026) et a été testé contre un faux serveur au même format. Avec Gemini, votre essai réel a bien joint Google, qui a
+  répondu « quota dépassé » (pas de génération d'images sans facturation). Côté Gemini : le format des requêtes suit la documentation de Google relue
   en novembre 2026 (avec repli automatique sur l'ancien format de configuration) ; le premier essai avec votre clé dira s'il
   répond. Le pilotage de Microsoft Edge sous Windows et l'installation de Playwright depuis Jarvis n'ont pas été vus sur Windows.
 

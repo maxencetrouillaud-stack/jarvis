@@ -706,3 +706,4 @@ button.bitem:hover { background: rgba(46, 139, 255, .1); }
 .composer-ctx svg { vertical-align: -2px; }
 .voicebar { flex-wrap: wrap; }
 .aview.compact .aview-title { flex-basis: 100%; }
+.field-end { display: flex; align-items: flex-end; }

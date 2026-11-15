@@ -80,7 +80,8 @@ export function ImagesView({ toast, active, goModels, askJarvis }: { toast: Toas
     <div className="studio-split">
       <aside className="studio-side">
         <div className="side-head"><h2>Images</h2><span className="muted small">{st ? `${st.providers.find((p) => p.id === st.provider)?.label} · ${st.model}` : ""}</span></div>
-        {noKey && <div className="notice warn slim"><Icon name="warn" size={15} /><span>{st!.reason}. {st!.providers[0]?.note}</span><button className="btn" onClick={goModels}>Ajouter la clé</button></div>}
+        {noKey && <div className="notice warn slim"><Icon name="warn" size={15} /><span>{st!.reason}. {st!.providers.find((p) => p.id === st!.provider)?.note}</span>
+          <button className="btn" onClick={goModels}>{st!.provider === "gemini" ? "Ajouter la clé" : "Configurer"}</button></div>}
         {editing ? (
           <div className="ask-box">
             <div className="row"><img className="thumb" src={editing.src} alt="" /><b className="grow">Modifier « {editing.title} »</b>

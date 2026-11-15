@@ -11,11 +11,21 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
   const [studio, setStudio] = useState<any>(null);
   const [browser, setBrowser] = useState<any>(null);
   const [models, setModels] = useState<string[]>([]);
+  const [cf, setCf] = useState({ account: "", token: "" });
   const load = async () => {
     try { setStudio(await api("GET", "/api/studio")); setBrowser(await api("GET", "/api/browser")); } catch { /* moteur en cours de démarrage */ }
   };
   useEffect(() => { if (active) load(); }, [active]);
-  useEvents((e) => { if (e.topic === "browser" && e.action === "installation") load(); });
+  useEvents((e) => { if ((e.topic === "browser" || e.topic === "images") && e.action === "installation") load(); });
+  useEffect(() => { if (studio?.images?.cf_account) setCf((c) => ({ ...c, account: c.account || studio.images.cf_account })); }, [studio?.images?.cf_account]);
+  const saveCf = async () => {
+    try { await api("POST", "/api/images/cloudflare", cf); setCf({ ...cf, token: "" }); toast("Cloudflare Workers AI enregistré : il devient le générateur d'images."); load(); }
+    catch (e: any) { toast(e.message, "error"); }
+  };
+  const installPillow = async () => {
+    if (!window.confirm("Installer Pillow ?\n\nJarvis va exécuter « pip install pillow » (environ 3 Mo depuis pypi.org). Ce module sert à réduire les images avant de les envoyer à Cloudflare pour une modification.")) return;
+    try { await api("POST", "/api/images/install-pillow", {}); toast("Installation de Pillow lancée."); setTimeout(load, 1500); } catch (e: any) { toast(e.message, "error"); }
+  };
   const install = async () => {
     if (!window.confirm("Installer le moteur Chromium ?\n\nJarvis va exécuter « pip install playwright » (environ 40 Mo depuis pypi.org). Sous Windows, il utilisera ensuite Microsoft Edge déjà présent sur votre PC ; sinon, il téléchargera Chromium (environ 150 Mo).")) return;
     try { await api("POST", "/api/browser/install", {}); toast("Installation lancée : suivez la progression ci-dessous."); load(); } catch (e: any) { toast(e.message, "error"); }
@@ -27,7 +37,7 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
   const ch = browser?.engines?.chromium;
   const ins = browser?.install;
   const img = studio?.images;
-  const imgModels = Array.from(new Set([...(models.length ? models : img?.providers?.[0]?.models || []), s.image_model].filter(Boolean)));
+  const imgModels = Array.from(new Set([...(models.length ? models : img?.providers?.find((p: any) => p.id === "gemini")?.models || []), s.image_model].filter(Boolean)));
   return (
     <div className="card">
       <h3>Espace de travail : outils, missions, navigateur, images</h3>
@@ -79,13 +89,41 @@ export function WorkspaceSettings({ state, patch, toast, active }: { state: AppS
       <p className="muted small">L'agent web respecte robots.txt, ne se connecte à aucun compte, ne remplit aucun formulaire et ne télécharge rien sans votre accord. Les fichiers exécutables (.exe, .msi, .bat, .ps1…) ne sont jamais téléchargés.</p>
 
       <h4 className="sub">Génération d'images</h4>
+      <div className="form three">
+        <label>Fournisseur
+          <select className="select" value={s.image_provider} onChange={(e) => { patch({ image_provider: e.target.value }); setModels([]); setTimeout(load, 300); }}>
+            <option value="cloudflare">Cloudflare Workers AI — FLUX (gratuit, limite quotidienne)</option>
+            <option value="gemini">Google Gemini — Nano Banana (payant)</option></select></label>
+      </div>
       <div className={`notice ${img?.available ? "info" : "warn"} slim`}><Icon name="image" size={15} />
-        <span>{img?.available ? "Google Gemini prêt." : `Indisponible : ${img?.reason || "…"}.`} {img?.providers?.[0]?.note}</span></div>
+        <span>{img?.available ? `${img?.providers?.find((p: any) => p.id === s.image_provider)?.label} prêt.` : `Indisponible : ${img?.reason || "…"}.`} {img?.providers?.find((p: any) => p.id === s.image_provider)?.note}</span></div>
+      {s.image_provider === "cloudflare" && <>
+        <ol className="steps small">
+          <li>Créez un compte gratuit sur <b>dash.cloudflare.com</b> (aucune carte bancaire n'est demandée pour l'offre gratuite).</li>
+          <li>Copiez votre <b>identifiant de compte</b> (Account ID : 32 caractères, affiché sur la page d'accueil du compte ou de Workers AI).</li>
+          <li>Créez un <b>jeton d'API</b> : Mon profil › Jetons d'API › Créer un jeton › modèle « Workers AI ». Collez-le ici, pas dans une conversation.</li>
+        </ol>
+        <div className="form three">
+          <label>Identifiant de compte<input className="input" value={cf.account} spellCheck={false} placeholder="32 caractères" onChange={(e) => setCf({ ...cf, account: e.target.value.trim() })} /></label>
+          <label>Jeton d'API {img?.cf_token && <small>(enregistré, chiffré — laissez vide pour le garder)</small>}
+            <input className="input" type="password" autoComplete="off" value={cf.token} placeholder={img?.cf_token ? "••••••••" : "jeton Workers AI"} onChange={(e) => setCf({ ...cf, token: e.target.value.trim() })} /></label>
+          <div className="field-end"><button className="btn primary" disabled={cf.account.length !== 32 || (!cf.token && !img?.cf_token)} onClick={saveCf}>Enregistrer les accès Cloudflare</button></div>
+        </div>
+        <div className={`notice ${img?.pillow ? "info" : "warn"} slim`}><Icon name="edit" size={15} />
+          <span>{img?.pillow ? "Modification d'images prête (module Pillow présent)." : "Pour modifier une image existante, Cloudflare exige une image de moins de 512 pixels : Jarvis a besoin du module Pillow pour la réduire. La création d'images fonctionne sans."}</span>
+          {!img?.pillow && <button className="btn" onClick={installPillow} disabled={img?.install?.state === "en cours"}><Icon name="download" size={14} /> Installer Pillow</button>}</div>
+        {img?.install && img.install.state !== "idle" && <pre className="install-log">{`Installation : ${img.install.state}\n` + img.install.log.join("\n")}</pre>}
+      </>}
       <div className="form three">
         <label>Modèle d'images
-          <select className="select" value={s.image_model} onChange={(e) => patch({ image_model: e.target.value })}>
-            <option value="">Par défaut ({img?.providers?.[0]?.models?.[0] || "…"})</option>
-            {imgModels.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
+          {s.image_provider === "cloudflare"
+            ? <select className="select" value={s.image_cf_model} onChange={(e) => patch({ image_cf_model: e.target.value })}>
+                <option value="">FLUX.2 [klein] 4B — crée et modifie (≈ 100 images/jour gratuites)</option>
+                <option value="@cf/black-forest-labs/flux-1-schnell">FLUX.1 [schnell] — crée seulement, plus économe</option>
+                {models.filter((m) => !["@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-1-schnell"].includes(m)).map((m) => <option key={m} value={m}>{m}</option>)}</select>
+            : <select className="select" value={s.image_model} onChange={(e) => patch({ image_model: e.target.value })}>
+                <option value="">Par défaut ({img?.providers?.find((p: any) => p.id === "gemini")?.models?.[0] || "…"})</option>
+                {imgModels.map((m) => <option key={m} value={m}>{m}</option>)}</select>}</label>
         <label>Taille par défaut
           <select className="select" value={s.image_size} onChange={(e) => patch({ image_size: e.target.value })}>
             <option value="">Définie par le modèle</option>{["1K", "2K", "4K"].map((x) => <option key={x}>{x}</option>)}</select></label>

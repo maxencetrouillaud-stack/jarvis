@@ -660,6 +660,19 @@ try {
   await shot("26-artefacts");
   step("projets : création, conversation rattachée, sources retrouvées ; bibliothèque d'artefacts");
 
+  await nav("Paramètres").click();
+  await page.getByLabel("Fournisseur").selectOption("cloudflare");
+  await page.getByRole("textbox", { name: "Identifiant de compte" }).fill("0123456789abcdef0123456789abcdef");
+  await page.getByLabel(/Jeton d'API/).fill("jeton-cloudflare-de-test-0001");
+  await page.getByRole("button", { name: "Enregistrer les accès Cloudflare" }).click();
+  await page.locator(".toast", { hasText: "Cloudflare Workers AI enregistré" }).waitFor();
+  const stc = await call("GET", "/api/studio");
+  assert.equal(stc.images.provider, "cloudflare");
+  assert.ok(stc.images.cf_token && !JSON.stringify(stc).includes("jeton-cloudflare-de-test"), "le jeton ne doit jamais revenir à l'interface");
+  await page.locator(".notice", { hasText: "Cloudflare Workers AI (FLUX, gratuit) prêt" }).waitFor();
+  await shot("27-cloudflare");
+  step("générateur d'images gratuit : Cloudflare configuré dans les paramètres, jeton chiffré et jamais renvoyé");
+
   assert.deepEqual(errors.filter((e) => !e.includes("401") && !/Refused to connect|connect-src 'none'/.test(e)), [], "erreurs dans la console");
   // (les seuls messages filtrés ci-dessus sont ceux du test d'isolement : l'artefact a tenté d'appeler l'API et a été bloqué)
   console.log("\nInterface : tous les parcours passent.");

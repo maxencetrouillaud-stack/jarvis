@@ -336,6 +336,24 @@ def handle(app, method, path, q, body):
         return {"state": im.state(), "images": ws.resources("image", _pid(arg("project_id")) if arg("project_id") else None,
                                                              saved, limit=min(500, _int(arg("limit"), 200)),
                                                              q=arg("q") or None)}
+    if path == "/api/images/cloudflare" and method == "POST":
+        # identifiant de compte (public) et jeton (chiffré, jamais renvoyé à l'interface)
+        b = body()
+        acc = str(b.get("account") or "").strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", acc):
+            raise Bad(400, "Identifiant de compte Cloudflare invalide : 32 caractères (tableau de bord Cloudflare, "
+                           "colonne de droite de la page Workers AI ou de la page d'accueil du compte).")
+        token = str(b.get("token") or "").strip()
+        if token and not re.fullmatch(r"[\w\-]{20,200}", token):
+            raise Bad(400, "Jeton d'API Cloudflare invalide")
+        app.settings.update({"image_cf_account": acc.lower(), "image_provider": "cloudflare"})
+        if token:
+            app.keys.set("cloudflare", token)
+        if not app.keys.has("cloudflare"):
+            raise Bad(400, "Ajoutez aussi le jeton d'API Cloudflare.")
+        return im.state()
+    if path == "/api/images/install-pillow" and method == "POST":
+        return im.start_pillow_install()
     if path == "/api/images/models" and method == "POST":
         return {"models": im.refresh_models(), "state": im.state()}
     if path == "/api/images/generate" and method == "POST":

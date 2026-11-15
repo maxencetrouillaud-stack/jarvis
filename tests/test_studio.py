@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fakes import Fake, FakeImages, FakeScience, FakeWeb, png  # noqa: E402
+from fakes import Fake, FakeCloudflare, FakeImages, FakeScience, FakeWeb, png  # noqa: E402
 from test_core import Base, blob, text_of  # noqa: E402
 from jarvis_core import artifacts as art  # noqa: E402
 from jarvis_core.browser import Browser, Reader, classify_input, read_html  # noqa: E402
@@ -380,9 +380,67 @@ class Images(Base):
 
     def app(self):
         app = studio_app(self.tmp)
-        app.settings.update({"providers": {"gemini": {"base_url": self.gi.url, "enabled": False}}})
+        app.settings.update({"providers": {"gemini": {"base_url": self.gi.url, "enabled": False}}, "image_provider": "gemini"})
         app.keys.set("gemini", "cle-test")
         return app
+
+    def test_cloudflare_free_provider(self):
+        from jarvis_core import images as imgmod
+        cf = FakeCloudflare()
+        app = studio_app(self.tmp)
+        self.assertFalse(app.images.available()[0])                      # rien de réglé : indisponible, et c'est dit
+        self.assertIn("identifiant de compte", app.images.available()[1])
+        app.settings.update({"image_provider": "cloudflare", "image_cf_account": cf.account, "image_cf_base": cf.url})
+        app.keys.set("cloudflare", "jeton-cloudflare-de-test-0001")
+        out = app.images.generate("une maison moderne au bord d'un lac", "3d", "paysage", "", 2)
+        self.assertEqual(len(out["images"]), 2)
+        path, ctype, fields, files = cf.calls[0]
+        self.assertTrue(path.endswith("/ai/run/@cf/black-forest-labs/flux-2-klein-4b"))
+        self.assertTrue(ctype.startswith("multipart/form-data"))
+        self.assertEqual((fields["width"], fields["height"]), ("1024", "576"))
+        self.assertIn("rendu 3D", fields["prompt"])
+        self.assertEqual(out["images"][0]["meta"]["provider"], "cloudflare")
+        # modification : l'image d'origine est réduite sous 512 px et envoyée comme input_image_0
+        big = app.ws.add_file("image", png((9, 9, 9), 900, 700), "image/png", "grande", saved=True)
+        app.images.edit(big["id"], "ajoute un arbre")
+        _, _, f2, files2 = cf.calls[-1]
+        self.assertIn("input_image_0", files2)
+        self.assertLess(max(imgmod.png_size(files2["input_image_0"])), 512)
+        # FLUX.1 [schnell] : JSON, et refus clair pour une modification
+        app.settings.update({"image_cf_model": "@cf/black-forest-labs/flux-1-schnell"})
+        app.images.generate("un logo", "logo", "carré")
+        self.assertEqual(cf.calls[-1][2]["prompt"][:8], "un logo\n")
+        with self.assertRaises(Exception) as e:
+            app.images.edit(big["id"], "ajoute un arbre")
+        self.assertIn("FLUX.2", str(e.exception))
+        cf.exhausted = True
+        with self.assertRaises(Exception) as e:
+            app.images.generate("un logo", "logo", "carré")
+        self.assertIn("Limite gratuite du jour", str(e.exception))
+        app.keys.set("cloudflare", "mauvais-jeton-0000000000")
+        cf.exhausted = False
+        with self.assertRaises(Exception) as e:
+            app.images.generate("un logo", "logo", "carré")
+        self.assertIn("Jeton Cloudflare refusé", str(e.exception))
+        cf.stop()
+        app.close()
+
+    def test_reference_shrink_without_pillow(self):
+        from jarvis_core import images as imgmod
+        saved = sys.modules.get("PIL")
+        sys.modules["PIL"] = None              # simule un PC sans Pillow
+        try:
+            small = png((1, 2, 3), 300, 200)
+            self.assertEqual(imgmod.shrink(small)[0], small)          # déjà assez petite : envoyée telle quelle
+            with self.assertRaises(imgmod.ImageError) as e:
+                imgmod.shrink(png((1, 2, 3), 900, 700))
+            self.assertIn("Installer Pillow", str(e.exception))
+            self.assertFalse(imgmod.pillow_installed())
+        finally:
+            if saved is None:
+                sys.modules.pop("PIL", None)
+            else:
+                sys.modules["PIL"] = saved
 
     def test_generate_edit_and_gallery(self):
         app = self.app()
@@ -498,7 +556,7 @@ class Missions(Base):
         app = studio_app(self.tmp, {"anthropic": f}, {"allow_private": True, "endpoints": self.sci.endpoints(),
                                                       "wikipedia": Wikipedia(self.web.url + "/w/api.php", True)},
                          default_model="anthropic:modele-a", browser_engine="lecture", **settings)
-        app.settings.update({"providers": {"gemini": {"base_url": self.gi.url, "enabled": False}}})
+        app.settings.update({"providers": {"gemini": {"base_url": self.gi.url, "enabled": False}}, "image_provider": "gemini"})
         app.keys.set("gemini", "cle-test")
         app.keys.set("brave", "cle-brave")
         return app

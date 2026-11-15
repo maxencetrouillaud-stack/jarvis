@@ -133,7 +133,7 @@ function App() {
         {view === "artifacts" && <div className="view"><ArtifactsView toast={push} active openId={libArt} askJarvis={(t, tool) => askJarvis(t, tool)} /></div>}
         {view === "browser" && <div className="view"><BrowserView toast={push} active openUrl={openUrl} goSettings={() => setView("settings")}
           askJarvis={(t, tab) => askJarvis(t, "page", tab)} /></div>}
-        {view === "images" && <div className="view"><ImagesView toast={push} active goModels={() => setView("models")} askJarvis={(t) => askJarvis(t)} /></div>}
+        {view === "images" && <div className="view"><ImagesView toast={push} active goModels={() => setView((state.settings as any).image_provider === "gemini" ? "models" : "settings")} askJarvis={(t) => askJarvis(t)} /></div>}
         {view === "projects" && <div className="view scroll"><ProjectsView toast={push} active openConv={goConv} openUrl={goUrl}
           openArtifact={goArtifact} /></div>}
         {view === "kb" && <div className="view scroll"><KnowledgeView {...common} focusDoc={focusDoc} openTab={kbTab}

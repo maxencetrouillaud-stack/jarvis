@@ -418,12 +418,19 @@ def make_handler(app: App):
                                      ("browser_agent_engine", ("lecture", "chromium")),
                                      ("browser_chromium_channel", ("auto", "msedge", "chrome", "chromium")),
                                      ("browser_search_engine", tuple(studio_api.SEARCH_PAGES)),
-                                     ("image_provider", ("gemini",)),
+                                     ("image_provider", ("gemini", "cloudflare")),
                                      ("image_size", ("", "1K", "2K", "4K"))):
                     if key in body and body[key] not in allowed:
                         body[key] = allowed[0]
                 if "image_model" in body:
                     body["image_model"] = re.sub(r"[^\w.\-]", "", str(body["image_model"] or ""))[:80]
+                if "image_cf_model" in body:
+                    body["image_cf_model"] = re.sub(r"[^\w.\-@/]", "", str(body["image_cf_model"] or ""))[:100]
+                    if body["image_cf_model"] and not body["image_cf_model"].startswith("@cf/"):
+                        raise HttpError(400, "Modèle Cloudflare invalide")
+                body.pop("image_cf_base", None)      # réservé aux tests
+                if "image_cf_account" in body and not re.fullmatch(r"[0-9a-fA-F]{32}|", str(body["image_cf_account"] or "")):
+                    raise HttpError(400, "Identifiant de compte Cloudflare invalide (32 caractères hexadécimaux)")
                 for key, lo, hi in (("orchestrator_max_steps", 2, 8), ("orchestrator_max_calls", 4, 40),
                                     ("orchestrator_max_seconds", 30, 1800), ("mission_max_steps", 2, 10),
                                     ("mission_max_seconds", 60, 3600), ("mission_pages", 1, 6),

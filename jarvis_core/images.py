@@ -1,20 +1,26 @@
 """Génération et modification d'images par IA, avec des adaptateurs interchangeables.
 
-Fournisseur branché : Google Gemini (modèles « Nano Banana », API generateContent). Il utilise la même clé que
-les modèles de texte Gemini, mais la génération d'images n'est pas comprise dans l'offre gratuite de l'API :
-la facturation doit être activée sur le projet Google de la clé. Ajouter un fournisseur = écrire une classe
-qui expose list_models() et generate(), et l'inscrire dans ADAPTERS.
+Fournisseurs branchés :
+- Cloudflare Workers AI (FLUX) — GRATUIT dans la limite de 10 000 « neurones » par jour (compte Cloudflare gratuit,
+  identifiant de compte + jeton d'API). FLUX.2 [klein] génère et modifie des images.
+- Google Gemini (modèles « Nano Banana », API generateContent) — même clé que les modèles de texte Gemini, mais la
+  génération d'images n'est pas comprise dans l'offre gratuite de l'API : la facturation doit être activée.
+Ajouter un fournisseur = écrire une classe qui expose list_models() et generate(), et l'inscrire dans ADAPTERS.
 
 Rien n'est simulé : sans clé ou en cas d'erreur du fournisseur, l'erreur exacte est affichée.
 """
 import base64
+import io
 import json
 import re
 import threading
+import urllib.error
 import urllib.parse
+import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-from .providers import ProviderError, _json
+from .providers import ProviderError, _json, _opener
 
 RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1"]
 FORMATS = {"carré": "1:1", "portrait": "3:4", "paysage": "16:9", "vertical": "9:16", "panoramique": "21:9"}
@@ -128,7 +134,8 @@ class GeminiImages:
 def _explain(msg):
     if "HTTP 429" in msg:
         return ("Quota de génération d'images atteint ou facturation non activée sur la clé Gemini "
-                "(l'offre gratuite de l'API ne comprend pas la génération d'images). " + msg[:300])
+                "(l'offre gratuite de l'API ne comprend pas la génération d'images). Option gratuite : Cloudflare "
+                "Workers AI, dans Paramètres › Génération d'images. " + msg[:300])
     if "HTTP 403" in msg or "HTTP 401" in msg:
         return "Clé Gemini refusée pour la génération d'images. " + msg[:300]
     if "HTTP 404" in msg:
@@ -136,12 +143,169 @@ def _explain(msg):
     return msg[:500]
 
 
-ADAPTERS = {"gemini": GeminiImages}
+def dims(aspect, size=""):
+    """Largeur et hauteur (multiples de 16, côté long 1024 / 1536 / 1920) pour une proportion « l:h »."""
+    w, h = (int(x) for x in aspect.split(":"))
+    long_side = {"": 1024, "1K": 1024, "2K": 1536, "4K": 1920}.get(size, 1024)
+    if w >= h:
+        W, H = long_side, long_side * h / w
+    else:
+        W, H = long_side * w / h, long_side
+    clamp = lambda v: max(256, min(1920, int(round(v / 16)) * 16))
+    return clamp(W), clamp(H)
+
+
+def shrink(data, max_side=511):
+    """Réduit une image de référence (FLUX.2 [klein] exige moins de 512 × 512). Nécessite Pillow ; une image déjà
+    assez petite est envoyée telle quelle. -> (octets, type)."""
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+    if Image is None:
+        size = png_size(data)
+        if size and max(size) <= max_side:
+            return data, "image/png"
+        raise ImageError("Pour modifier une image avec Cloudflare, Jarvis doit la réduire à moins de 512 pixels : "
+                         "installez le module d'images (Paramètres › Génération d'images › Installer Pillow).")
+    im = Image.open(io.BytesIO(data))
+    im.load()
+    if im.mode not in ("RGB", "RGBA"):
+        im = im.convert("RGBA" if "A" in im.getbands() else "RGB")
+    im.thumbnail((max_side, max_side))
+    out = io.BytesIO()
+    im.save(out, "PNG")
+    return out.getvalue(), "image/png"
+
+
+def png_size(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    return None
+
+
+def pillow_installed():
+    try:
+        import PIL  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+class CloudflareImages:
+    """Cloudflare Workers AI : modèles FLUX hébergés. Offre gratuite : 10 000 neurones par jour (remis à zéro à minuit
+    UTC) ; une image 1024 × 768 avec FLUX.2 [klein] 4B en consomme une centaine, FLUX.1 [schnell] environ 60."""
+    id, label = "cloudflare", "Cloudflare Workers AI (FLUX, gratuit)"
+    key_name = "cloudflare"
+    DEFAULT_MODELS = ["@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-1-schnell"]
+    EDIT_MODELS = ("@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-2-klein-9b",
+                   "@cf/black-forest-labs/flux-2-dev")
+    note = ("Gratuit dans la limite de 10 000 neurones par jour (environ 100 images par jour avec FLUX.2 [klein]) : "
+            "compte Cloudflare gratuit, identifiant de compte et jeton d'API avec la permission « Workers AI ».")
+
+    def __init__(self, base_url, key, account=""):
+        self.base, self.key, self.account = base_url.rstrip("/"), key, account
+
+    def _url(self, model):
+        return f"{self.base}/accounts/{urllib.parse.quote(self.account)}/ai/run/{model}"
+
+    def list_models(self):
+        j = _json(f"{self.base}/accounts/{urllib.parse.quote(self.account)}/ai/models/search?task=Text-to-Image&per_page=50",
+                  {"Authorization": f"Bearer {self.key}"}, timeout=20)
+        return [m["name"] for m in j.get("result", []) if str(m.get("name", "")).startswith("@cf/")]
+
+    def _post(self, url, data, ctype):
+        req = urllib.request.Request(url, data=data, method="POST", headers={
+            "Authorization": f"Bearer {self.key}", "Content-Type": ctype, "User-Agent": "Jarvis"})
+        try:
+            with _opener(url).open(req, timeout=180) as r:
+                return r.read(), r.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", "replace")
+            msg = raw[:400]
+            try:
+                j = json.loads(raw)
+                errs = j.get("errors") or []
+                if errs:
+                    msg = "; ".join(f"{x.get('code', '')} {x.get('message', '')}".strip() for x in errs)[:400]
+            except ValueError:
+                pass
+            raise ImageError(_explain_cf(e.code, msg)) from None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise ImageError(f"Cloudflare injoignable ({getattr(e, 'reason', e)})") from None
+
+    def generate(self, model, prompt, refs=(), aspect="1:1", size=""):
+        W, H = dims(aspect, size)
+        if model.startswith("@cf/black-forest-labs/flux-2"):
+            # FLUX.2 : formulaire multipart ; images de référence input_image_0..3 (moins de 512 × 512)
+            fields = [("prompt", prompt[:2048]), ("width", str(W)), ("height", str(H))]
+            files = []
+            for i, (data, mime) in enumerate(list(refs)[:4]):
+                small, smime = shrink(data)
+                files.append((f"input_image_{i}", f"ref{i}.png", small, smime))
+            body, ctype = _multipart(fields, files)
+        else:
+            if refs:
+                raise ImageError(f"Le modèle {model} ne sait pas modifier une image : choisissez FLUX.2 [klein] "
+                                 "dans Paramètres › Génération d'images.")
+            body, ctype = json.dumps({"prompt": prompt[:2048], "steps": 8 if size in ("2K", "4K") else 4}).encode(), \
+                "application/json"
+        raw, rtype = self._post(self._url(model), body, ctype)
+        if rtype.startswith("image/"):
+            return [(raw, rtype.split(";")[0])], ""
+        try:
+            j = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            raise ImageError("Réponse illisible de Cloudflare") from None
+        if j.get("success") is False:
+            errs = "; ".join(str(x.get("message", x)) for x in j.get("errors") or [])
+            raise ImageError(_explain_cf(200, errs))
+        res = j.get("result", j)
+        img = res.get("image") if isinstance(res, dict) else None
+        if not img:
+            raise ImageError("Cloudflare n'a renvoyé aucune image.")
+        data = base64.b64decode(img)
+        return [(data, sniff(data) or "image/jpeg")], ""
+
+
+def _multipart(fields, files):
+    boundary = "jarvis" + uuid.uuid4().hex
+    out = io.BytesIO()
+    for name, value in fields:
+        out.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode())
+        out.write(str(value).encode("utf-8") + b"\r\n")
+    for name, fname, data, mime in files:
+        out.write(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{fname}\"\r\n"
+                  f"Content-Type: {mime}\r\n\r\n".encode())
+        out.write(data + b"\r\n")
+    out.write(f"--{boundary}--\r\n".encode())
+    return out.getvalue(), f"multipart/form-data; boundary={boundary}"
+
+
+def _explain_cf(code, msg):
+    low = msg.lower()
+    if code == 429 or "neuron" in low or "daily free allocation" in low or "3036" in msg:
+        return ("Limite gratuite du jour atteinte chez Cloudflare (10 000 neurones par jour, remise à zéro à 1 h du matin, "
+                "heure de Paris). " + msg[:200])
+    if code in (401, 403) or "authentication" in low or "10000" in msg:
+        return ("Jeton Cloudflare refusé : vérifiez l'identifiant de compte et que le jeton a la permission « Workers AI ». "
+                + msg[:200])
+    if "3030" in msg or "flagged" in low:
+        return "Cloudflare a refusé l'image produite (filtre de contenu). Reformulez la demande. " + msg[:200]
+    if code == 404 or "no route" in low or "not found" in low:
+        return "Modèle introuvable chez Cloudflare : choisissez-en un autre dans Paramètres › Génération d'images. " + msg[:200]
+    return f"Cloudflare : HTTP {code} — {msg[:300]}"
+
+
+ADAPTERS = {"cloudflare": CloudflareImages, "gemini": GeminiImages}
+CF_BASE = "https://api.cloudflare.com/client/v4"
 
 
 class ImageService:
-    def __init__(self, ws, settings, keys):
+    def __init__(self, ws, settings, keys, install_cmd=None):
         self.ws, self.settings, self.keys = ws, settings, keys
+        self.install = {"state": "idle", "log": []}
+        self._install_cmd = install_cmd
         self._models = {}
         self._lock = threading.Lock()
 
@@ -150,30 +314,45 @@ class ImageService:
         cls = ADAPTERS.get(pid)
         if not cls:
             raise ImageError(f"Fournisseur d'images inconnu : {pid}")
-        if not self.keys.has(cls.key_name):
-            raise ImageError(f"Aucune clé {cls.label} : ajoutez votre clé Gemini dans l'onglet Modèles. {cls.note}")
+        ok, why = self._ready(pid)
+        if not ok:
+            raise ImageError(f"{cls.label} : {why}. {cls.note}")
+        if pid == "cloudflare":
+            return cls(self.settings.get("image_cf_base") or CF_BASE, self.keys.get("cloudflare"),
+                       self.settings.get("image_cf_account", ""))
         base = (self.settings.get("providers", {}).get(cls.key_name) or {}).get("base_url") or \
             "https://generativelanguage.googleapis.com/v1beta"
         return cls(base, self.keys.get(cls.key_name))
 
+    def _ready(self, pid):
+        if pid == "cloudflare":
+            if not self.settings.get("image_cf_account"):
+                return False, "identifiant de compte Cloudflare manquant (Paramètres › Génération d'images)"
+            if not self.keys.has("cloudflare"):
+                return False, "jeton d'API Cloudflare manquant (Paramètres › Génération d'images)"
+            return True, ""
+        if not self.keys.has(ADAPTERS[pid].key_name):
+            return False, "clé Gemini manquante (onglet Modèles)"
+        return True, ""
+
     def available(self):
         pid = self.settings.get("image_provider", "gemini")
-        cls = ADAPTERS.get(pid)
-        if not cls:
+        if pid not in ADAPTERS:
             return False, "fournisseur d'images inconnu"
-        if not self.keys.has(cls.key_name):
-            return False, f"clé {cls.label} manquante (onglet Modèles)"
-        return True, ""
+        return self._ready(pid)
 
     def state(self):
         out = []
         for pid, cls in ADAPTERS.items():
-            out.append({"id": pid, "label": cls.label, "has_key": self.keys.has(cls.key_name), "note": cls.note,
-                        "models": self._models.get(pid) or cls.DEFAULT_MODELS, "listed": pid in self._models})
+            out.append({"id": pid, "label": cls.label, "has_key": self._ready(pid)[0], "note": cls.note,
+                        "models": self._models.get(pid) or cls.DEFAULT_MODELS, "listed": pid in self._models,
+                        "free": pid == "cloudflare"})
         ok, why = self.available()
         return {"providers": out, "available": ok, "reason": why, "ratios": RATIOS, "formats": FORMATS,
                 "sizes": SIZES, "styles": {k: v[0] for k, v in STYLES.items()},
-                "provider": self.settings.get("image_provider", "gemini"), "model": self.model()}
+                "provider": self.settings.get("image_provider", "gemini"), "model": self.model(),
+                "cf_account": self.settings.get("image_cf_account", ""), "cf_token": self.keys.has("cloudflare"),
+                "pillow": pillow_installed(), "install": dict(self.install, log=self.install["log"][-30:])}
 
     def refresh_models(self):
         try:
@@ -188,8 +367,46 @@ class ImageService:
 
     def model(self):
         pid = self.settings.get("image_provider", "gemini")
-        m = self.settings.get("image_model", "")
+        m = self.settings.get("image_cf_model" if pid == "cloudflare" else "image_model", "")
         return m or ADAPTERS.get(pid, GeminiImages).DEFAULT_MODELS[0]
+
+    def start_pillow_install(self):
+        """Installe Pillow (réduction des images de référence) avec pip, sur demande de l'utilisateur."""
+        import subprocess
+        import sys
+        from pathlib import Path
+        if self.install["state"] == "en cours":
+            return self.install
+        py = Path(sys.executable)
+        cons = py.with_name("python.exe") if py.name.lower() == "pythonw.exe" else py
+        cmd = self._install_cmd or [str(cons), "-m", "pip", "install", "--user", "--upgrade", "pillow"]
+        self.install = {"state": "en cours", "log": ["$ pip install pillow"]}
+
+        def run():
+            try:
+                p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                for line in p.stdout:
+                    if line.strip():
+                        self.install["log"].append(line.rstrip()[:300])
+                ok = p.wait() == 0
+            except OSError as e:
+                self.install["log"].append(f"Erreur : {e}")
+                ok = False
+            if ok:
+                import importlib
+                import site
+                importlib.invalidate_caches()
+                try:
+                    site.addsitedir(site.getusersitepackages())
+                except Exception:
+                    pass
+            self.install["state"] = "terminée" if ok and pillow_installed() else "échec"
+            if ok and not pillow_installed():
+                self.install["log"].append("Pillow est installé mais pas encore visible : redémarrez Jarvis.")
+            self.ws.bus.publish("images", action="installation", state=self.install["state"])
+        threading.Thread(target=run, daemon=True).start()
+        return self.install
 
     # ------------------------------------------------------------------ entrées
     def upload(self, data: bytes, name="image", project_id=None):

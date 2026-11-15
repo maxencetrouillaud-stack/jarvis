@@ -91,8 +91,11 @@ DEFAULTS = {
     "browser_agent_engine": "lecture",
     "browser_chromium_channel": "auto",   # navigateur piloté : auto (Edge sous Windows), msedge, chrome, chromium
     "browser_search_engine": "duckduckgo",  # moteur des recherches tapées dans la barre d'adresse (mode Chromium)
-    "image_provider": "gemini",
-    "image_model": "",             # vide = modèle par défaut du fournisseur
+    "image_provider": "cloudflare",  # "cloudflare" (FLUX, gratuit dans une limite quotidienne) ou "gemini" (payant)
+    "image_model": "",             # modèle Gemini (vide = modèle par défaut)
+    "image_cf_model": "",          # modèle Cloudflare (vide = FLUX.2 [klein] 4B)
+    "image_cf_account": "",        # identifiant de compte Cloudflare (le jeton est chiffré avec les autres clés)
+    "image_cf_base": "",           # adresse de l'API Cloudflare (vide = officielle ; utilisée par les tests)
     "image_size": "",              # "", "1K", "2K" ou "4K"
     "images_keep_days": 7,         # images générées non enregistrées : effacées après ce délai
     "providers": {

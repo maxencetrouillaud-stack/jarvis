@@ -337,3 +337,65 @@ class FakeImages:
     def stop(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+class FakeCloudflare:
+    """Faux point d'accès Cloudflare Workers AI (/accounts/{id}/ai/run/{modèle}) au format de fil documenté :
+    FLUX.2 en multipart/form-data, FLUX.1 [schnell] en JSON, réponse {"result": {"image": base64}, "success": true}."""
+
+    def __init__(self, account="0123456789abcdef0123456789abcdef"):
+        self.account = account
+        self.calls = []            # (chemin, type de contenu, champs, fichiers)
+        self.exhausted = False
+        me = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _j(self, obj, code=200):
+                b = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+
+            def do_POST(self):
+                import base64 as b64
+                import email.parser
+                import email.policy
+                n = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(n)
+                ctype = self.headers.get("Content-Type", "")
+                if self.headers.get("Authorization") != "Bearer jeton-cloudflare-de-test-0001":
+                    return self._j({"success": False, "errors": [{"code": 10000, "message": "Authentication error"}]}, 401)
+                if not self.path.startswith(f"/accounts/{me.account}/ai/run/@cf/"):
+                    return self._j({"success": False, "errors": [{"code": 7003, "message": "No route for that URI"}]}, 404)
+                fields, files = {}, {}
+                if ctype.startswith("multipart/form-data"):
+                    msg = email.parser.BytesParser(policy=email.policy.HTTP).parsebytes(
+                        b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + raw)
+                    for part in msg.iter_parts():
+                        name = part.get_param("name", header="content-disposition")
+                        if part.get_filename():
+                            files[name] = part.get_payload(decode=True)
+                        else:
+                            fields[name] = part.get_payload(decode=True).decode()
+                else:
+                    fields = json.loads(raw or b"{}")
+                me.calls.append((self.path, ctype, fields, files))
+                if me.exhausted:
+                    return self._j({"success": False, "errors": [{"code": 3036, "message":
+                                    "You have used up your daily free allocation of 10,000 neurons."}]}, 429)
+                return self._j({"result": {"image": b64.b64encode(png((240, 120, 0))).decode()}, "success": True,
+                                "errors": [], "messages": []})
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.httpd.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()

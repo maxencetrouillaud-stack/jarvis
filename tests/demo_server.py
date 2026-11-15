@@ -147,6 +147,7 @@ def main():
     # espace de travail : faux générateur d'images (format Gemini) et pages web locales pour le navigateur
     gi = FakeImages()
     app.settings.update({"providers": {"gemini": {"base_url": gi.url, "enabled": False}}, "browser_engine": "lecture",
+                         "image_provider": "gemini",
                          "mission_runtime_check": False})
     app.keys.set("gemini", "cle-test")
     web.pages["/treuil"] = ("text/html; charset=utf-8", (
